@@ -161,6 +161,10 @@ public:
       TextureId audioTexture, int textureWidth, float surfaceWidth, float surfaceHeight, float width, float height,
       const FancyAudioVisualizerStyle& style, const Mat3& transform
   ) = 0;
+  virtual void drawJellyCat(
+      float surfaceWidth, float surfaceHeight, float width, float height, const JellyCatStyle& style,
+      const Mat3& transform
+  ) = 0;
   virtual void drawEffect(
       float surfaceWidth, float surfaceHeight, float width, float height, const EffectStyle& style,
       const Mat3& transform

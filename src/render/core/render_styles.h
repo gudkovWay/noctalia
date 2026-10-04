@@ -225,6 +225,28 @@ constexpr bool operator==(const FancyAudioVisualizerStyle& lhs, const FancyAudio
       && lhs.cornerRadius == rhs.cornerRadius;
 }
 
+// Motion state and appearance of the procedural jelly cat. Motion channels are
+// the spring outputs produced by the control layer; the render path only
+// consumes them. bodyMotion = (sway x, sway y, squash, twist), earMotion =
+// (left, right), upperMotion = (x, y); yaw/pitch are the static view angles.
+struct JellyCatStyle {
+  std::array<float, 4> bodyMotion{};
+  std::array<float, 2> earMotion{};
+  std::array<float, 2> upperMotion{};
+  Color milkColor = rgba(243.0F / 255.0F, 237.0F / 255.0F, 221.0F / 255.0F, 1.0F);
+  float yaw = 0.68F;
+  float pitch = 0.38F;
+};
+
+constexpr bool operator==(const JellyCatStyle& lhs, const JellyCatStyle& rhs) noexcept {
+  return lhs.bodyMotion == rhs.bodyMotion
+      && lhs.earMotion == rhs.earMotion
+      && lhs.upperMotion == rhs.upperMotion
+      && lhs.milkColor == rhs.milkColor
+      && lhs.yaw == rhs.yaw
+      && lhs.pitch == rhs.pitch;
+}
+
 enum class EffectType : std::uint8_t { None, Sun, Snow, Rain, Cloud, Fog, Stars };
 
 struct EffectStyle {

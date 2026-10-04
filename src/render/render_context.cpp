@@ -17,6 +17,7 @@
 #include "render/scene/glyph_node.h"
 #include "render/scene/graph_node.h"
 #include "render/scene/image_node.h"
+#include "render/scene/jelly_cat_node.h"
 #include "render/scene/lockscreen_transition_node.h"
 #include "render/scene/node.h"
 #include "render/scene/rect_node.h"
@@ -497,6 +498,13 @@ void RenderContext::renderNode(
           worldTransform
       );
     }
+    break;
+  }
+  case NodeType::JellyCat: {
+    const auto* cat = static_cast<const JellyCatNode*>(node);
+    auto style = cat->style();
+    style.milkColor.a *= effectiveOpacity;
+    m_backend->drawJellyCat(sw, sh, node->width(), node->height(), style, worldTransform);
     break;
   }
   case NodeType::Effect: {

@@ -25,6 +25,7 @@ namespace desktop_settings {
         {.type = "calendar", .labelKey = "desktop-widgets.editor.types.calendar"},
         {.type = "clock", .labelKey = "desktop-widgets.editor.types.clock"},
         {.type = "fancy_audio_visualizer", .labelKey = "desktop-widgets.editor.types.fancy-audio-visualizer"},
+        {.type = "jelly_cat", .labelKey = "desktop-widgets.editor.types.jelly-cat"},
         {.type = "label", .labelKey = "desktop-widgets.editor.types.label"},
         {.type = "media_player", .labelKey = "desktop-widgets.editor.types.media-player"},
         {.type = "sticker", .labelKey = "desktop-widgets.editor.types.sticker"},
@@ -185,7 +186,7 @@ namespace desktop_settings {
     }
 
     const WidgetSettingVisibility backgroundOn{"background", {"true"}};
-    const bool backgroundDefault = type != "fancy_audio_visualizer";
+    const bool backgroundDefault = type != "fancy_audio_visualizer" && type != "jelly_cat";
 
     auto bgColor = colorSpec("background_color", "surface");
     bgColor.visibleWhen = backgroundOn;
@@ -312,6 +313,11 @@ namespace desktop_settings {
       add(boolSpec("fade_when_idle", true));
       add(colorSpec("primary_color", "primary"));
       add(colorSpec("secondary_color", "secondary"));
+    } else if (type == "jelly_cat") {
+      add(intSpec("size", 210, 96.0, 512.0, 2.0));
+      add(colorSpec("color", "#f3eddd"));
+      add(doubleSpec("sensitivity", 1.0, 0.1, 3.0, 0.1));
+      add(boolSpec("music_enabled", true));
     } else if (type == "sticker") {
       add(stringSpec("image_path"));
       add(doubleSpec("opacity", 1.0, 0.0, 1.0, 0.01));
