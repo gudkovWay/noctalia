@@ -9,6 +9,7 @@
 #include "shell/desktop/widgets/desktop_calendar_widget.h"
 #include "shell/desktop/widgets/desktop_clock_widget.h"
 #include "shell/desktop/widgets/desktop_fancy_audio_visualizer_widget.h"
+#include "shell/desktop/widgets/desktop_jelly_cat_widget.h"
 #include "shell/desktop/widgets/desktop_label_widget.h"
 #include "shell/desktop/widgets/desktop_login_box_widget.h"
 #include "shell/desktop/widgets/desktop_media_player_widget.h"
@@ -266,6 +267,22 @@ std::unique_ptr<DesktopWidget> DesktopWidgetFactory::create(
             .fadeWhenIdle = getBoolSetting(settings, "fade_when_idle", true),
             .primaryColor = getColorSpecSetting(settings, "primary_color", colorSpecFromRole(ColorRole::Primary)),
             .secondaryColor = getColorSpecSetting(settings, "secondary_color", colorSpecFromRole(ColorRole::Secondary)),
+        }
+    );
+    applyCommonSettings(*widget, settings, false);
+    widget->setContentScale(contentScale);
+    return widget;
+  }
+
+  if (type == "jelly_cat") {
+    // Pointer-only cat is valid: a null spectrum simply disables music reactivity.
+    auto widget = std::make_unique<DesktopJellyCatWidget>(
+        m_pipewireSpectrum,
+        DesktopJellyCatWidget::Options{
+            .size = std::clamp(getFloatSetting(settings, "size", 210.0F), 96.0F, 512.0F),
+            .color = getColorSpecSetting(settings, "color", colorSpecFromConfigString("#f3eddd", "color")),
+            .sensitivity = std::clamp(getFloatSetting(settings, "sensitivity", 1.0F), 0.1F, 3.0F),
+            .musicEnabled = getBoolSetting(settings, "music_enabled", true),
         }
     );
     applyCommonSettings(*widget, settings, false);

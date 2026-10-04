@@ -1561,6 +1561,9 @@ void DesktopWidgetsEditor::addWidget(const std::string& outputName, const std::s
   if (widget.type == "fancy_audio_visualizer") {
     widget.settings.emplace("background", false);
   }
+  if (widget.type == "jelly_cat") {
+    widget.settings.emplace("background", false);
+  }
   if (widget.type == "button") {
     widget.settings.emplace("background", true);
     widget.settings.emplace("glyph", std::string("heart"));

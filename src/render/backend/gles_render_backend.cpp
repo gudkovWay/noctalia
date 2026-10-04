@@ -658,6 +658,14 @@ void GlesRenderBackend::drawFancyAudioVisualizer(
   m_fancyAudioVisualizerProgram.draw(audioTexture, surfaceWidth, surfaceHeight, width, height, style, transform);
 }
 
+void GlesRenderBackend::drawJellyCat(
+    float surfaceWidth, float surfaceHeight, float width, float height, const JellyCatStyle& style,
+    const Mat3& transform
+) {
+  m_jellyCatProgram.ensureInitialized();
+  m_jellyCatProgram.draw(surfaceWidth, surfaceHeight, width, height, style, transform);
+}
+
 void GlesRenderBackend::drawEffect(
     float surfaceWidth, float surfaceHeight, float width, float height, const EffectStyle& style, const Mat3& transform
 ) {
@@ -765,6 +773,7 @@ void GlesRenderBackend::destroyGpuObjects() {
   m_screenCornerProgram.destroy();
   m_audioSpectrumProgram.destroy();
   m_fancyAudioVisualizerProgram.destroy();
+  m_jellyCatProgram.destroy();
   m_effectProgram.destroy();
   m_graphProgram.destroy();
   m_wallpaperProgram.destroy();
@@ -785,6 +794,7 @@ void GlesRenderBackend::abandonGpuObjects() noexcept {
   m_screenCornerProgram.abandon();
   m_audioSpectrumProgram.abandon();
   m_fancyAudioVisualizerProgram.abandon();
+  m_jellyCatProgram.abandon();
   m_effectProgram.abandon();
   m_graphProgram.abandon();
   m_wallpaperProgram.abandon();

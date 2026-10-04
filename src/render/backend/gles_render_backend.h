@@ -11,6 +11,7 @@
 #include "render/programs/glyph_program.h"
 #include "render/programs/graph_program.h"
 #include "render/programs/image_program.h"
+#include "render/programs/jelly_cat_program.h"
 #include "render/programs/lockscreen_transition_program.h"
 #include "render/programs/rect_program.h"
 #include "render/programs/screen_corner_program.h"
@@ -78,6 +79,10 @@ public:
       TextureId audioTexture, int textureWidth, float surfaceWidth, float surfaceHeight, float width, float height,
       const FancyAudioVisualizerStyle& style, const Mat3& transform
   ) override;
+  void drawJellyCat(
+      float surfaceWidth, float surfaceHeight, float width, float height, const JellyCatStyle& style,
+      const Mat3& transform
+  ) override;
   void drawEffect(
       float surfaceWidth, float surfaceHeight, float width, float height, const EffectStyle& style,
       const Mat3& transform
@@ -130,6 +135,7 @@ private:
   ScreenCornerProgram m_screenCornerProgram;
   AudioSpectrumProgram m_audioSpectrumProgram;
   FancyAudioVisualizerProgram m_fancyAudioVisualizerProgram;
+  JellyCatProgram m_jellyCatProgram;
   EffectProgram m_effectProgram;
   GraphProgram m_graphProgram;
   WallpaperProgram m_wallpaperProgram;
