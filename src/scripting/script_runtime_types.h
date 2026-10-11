@@ -139,6 +139,8 @@ namespace scripting {
 
     // Panel field (the `panel.*` namespace): a close request.
     std::optional<bool> requestClose;
+    // Local host extension: temporary capture of the host Cancel chord.
+    std::optional<bool> captureCancel;
 
     [[nodiscard]] bool empty() const {
       return !text.has_value()
@@ -161,7 +163,8 @@ namespace scripting {
           && !uiTree.has_value()
           && !wantsSecondTicks.has_value()
           && !needsFrameTick.has_value()
-          && !requestClose.has_value();
+          && !requestClose.has_value()
+          && !captureCancel.has_value();
     }
   };
 

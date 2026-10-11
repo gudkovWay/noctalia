@@ -7,6 +7,7 @@
 #include "scripting/plugin_script_watcher.h"
 #include "scripting/script_runtime.h"
 #include "shell/panel/panel.h"
+#include "shell/panel/panel_cancel_capture.h"
 #include "ui/ui_tree.h"
 #include "ui/ui_tree_reconciler.h"
 
@@ -118,6 +119,7 @@ private:
     bool held = false;
   };
   std::vector<CaptureKey> m_captureKeys;
+  PanelCancelCapture m_cancelCapture;
   std::shared_ptr<scripting::ScriptRuntime> m_runtime;
   scripting::ScriptRuntime::SubscriberId m_runtimeSubscription = 0;
   FileWatcher* m_fileWatcher = nullptr;

@@ -118,6 +118,9 @@ namespace scripting {
       if (src.needsFrameTick.has_value()) {
         dest.needsFrameTick = src.needsFrameTick;
       }
+      if (src.captureCancel.has_value()) {
+        dest.captureCancel = src.captureCancel;
+      }
     }
 
     void mergeResult(ScriptResult& dest, const ScriptResult& src) {

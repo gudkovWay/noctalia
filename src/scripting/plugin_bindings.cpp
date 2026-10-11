@@ -620,6 +620,14 @@ namespace {
     return 0;
   }
 
+  int luau_panel_setCaptureCancel(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TBOOLEAN);
+    if (auto* context = getContext(L)) {
+      context->patch.captureCancel = lua_toboolean(L, 1) != 0;
+    }
+    return 0;
+  }
+
   constexpr int kContextMenuMaxItems = 64;
   constexpr int kContextMenuMaxVisible = 30;
   constexpr std::size_t kContextMenuMaxIdBytes = 128;
@@ -772,6 +780,7 @@ namespace {
   const luaL_Reg kPanelLib[] = {
       {"render", luau_ui_render},
       {"close", luau_panel_close},
+      {"setCaptureCancel", luau_panel_setCaptureCancel},
       {"openContextMenu", luau_panel_openContextMenu},
       {"setWantsSecondTicks", luau_ui_setWantsSecondTicks},
       {"setNeedsFrameTick", luau_ui_setNeedsFrameTick},

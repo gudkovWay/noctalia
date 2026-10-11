@@ -1244,6 +1244,7 @@ if build_tests
     'notification_history_utf8',
     'notification_internal_history',
     'path_browse',
+    'panel_cancel_capture',
     'pipewire_error',
     'plugin_bindings',
     'plugin_catalog',
