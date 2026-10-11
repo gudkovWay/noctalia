@@ -89,18 +89,22 @@ bool PluginPanel::handleGlobalKey(std::uint32_t sym, std::uint32_t modifiers, bo
   if (m_captureKeys.empty() || preedit || m_runtime == nullptr || !m_runtime->hasOnKey()) {
     return false;
   }
-  // Cancel stays with the host: a panel that captured it could make itself impossible to
-  // dismiss from the keyboard. Checked live because the user can rebind the action.
-  if (KeybindMatcher::matches(KeybindAction::Cancel, sym, modifiers)) {
-    return false;
-  }
-
   const auto match = std::ranges::find_if(m_captureKeys, [sym, modifiers](const CaptureKey& candidate) {
     return keyChordMatches(candidate.chord, sym, modifiers);
   });
   if (match == m_captureKeys.end()) {
     return false;
   }
+  if (KeybindMatcher::matches(KeybindAction::Cancel, sym, modifiers)) {
+    const auto decision = m_cancelCapture.handle(pressed);
+    if (decision == PanelCancelCapture::Decision::Pass) {
+      return false;
+    }
+    if (decision == PanelCancelCapture::Decision::Repeat) {
+      return true;
+    }
+  }
+
 
   // Still consumed, so the repeat does not leak to the host, but the script sees one press per
   // physical press.
@@ -250,6 +254,7 @@ bool PluginPanel::isContextActive(std::string_view context) const { return m_ope
 void PluginPanel::onClose() {
   ++m_openGeneration;
   m_open = false;
+  m_cancelCapture.reset();
   m_openContext.clear();
   closeContextMenu();
   m_tickTimer.stop();
@@ -342,6 +347,11 @@ void PluginPanel::handleScriptResult(scripting::ScriptResult result) {
   }
 
   const auto& patch = result.patch;
+  if (!result.ok || result.unhealthy) {
+    m_cancelCapture.reset();
+  } else if (patch.captureCancel.has_value()) {
+    m_cancelCapture.setEnabled(m_open && *patch.captureCancel);
+  }
   if (patch.wantsSecondTicks.has_value()) {
     m_wantsSecondTicks = *patch.wantsSecondTicks;
     startTickTimer();
@@ -508,6 +518,7 @@ void PluginPanel::teardownScriptWatch() { m_scriptWatcher.stop(); }
 
 void PluginPanel::reloadScript() {
   ++m_openGeneration;
+  m_cancelCapture.reset();
   closeContextMenu();
   std::string source = readFile(m_sourcePath);
   auto name = m_sourcePath.filename().string();
