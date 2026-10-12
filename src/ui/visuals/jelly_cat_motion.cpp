@@ -9,7 +9,8 @@ namespace {
   // delayed upper-body sway X/Z (tunable visual modes, not measured material).
   constexpr std::array<float, JellyCatMotion::kSpringCount> kStiffness = {225.0F, 196.0F, 400.0F, 256.0F,
                                                                           625.0F, 676.0F, 324.0F, 289.0F};
-  constexpr std::array<float, JellyCatMotion::kSpringCount> kDamping = {7.5F, 7.0F, 8.0F, 8.0F, 12.0F, 12.0F, 13.0F, 12.0F};
+  constexpr std::array<float, JellyCatMotion::kSpringCount> kDamping = {7.5F,  7.0F,  8.0F,  8.0F,
+                                                                        12.0F, 12.0F, 13.0F, 12.0F};
   constexpr std::array<float, JellyCatMotion::kSpringCount> kLimits = {0.38F, 0.33F, 0.34F, 0.32F,
                                                                        0.26F, 0.26F, 0.42F, 0.37F};
 
