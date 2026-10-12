@@ -22,8 +22,7 @@ namespace {
 } // namespace
 
 DesktopJellyCatWidget::DesktopJellyCatWidget(PipeWireSpectrum* spectrum, Options options)
-    : m_spectrum(spectrum), m_size(std::clamp(options.size, kMinCatSize, kMaxCatSize)),
-      m_color(std::move(options.color)),
+    : m_spectrum(spectrum), m_size(std::clamp(options.size, kMinCatSize, kMaxCatSize)), m_color(options.color),
       m_sensitivity(std::clamp(options.sensitivity, kMinSensitivity, kMaxSensitivity)),
       m_musicEnabled(options.musicEnabled) {}
 

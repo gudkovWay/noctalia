@@ -26,7 +26,7 @@ namespace {
 
 } // namespace
 
-JellyCat::JellyCat() : JellyCatNode() {
+JellyCat::JellyCat() {
   auto input = std::make_unique<InputArea>();
   input->setAcceptedButtons(InputArea::buttonMask({BTN_LEFT, BTN_RIGHT}));
   input->setFocusable(false);
@@ -75,7 +75,7 @@ void JellyCat::setValues(std::span<const float> values) {
   }
 
   m_audioPresent = true;
-  m_rawEnergy = *std::max_element(m_levels.begin(), m_levels.end());
+  m_rawEnergy = *std::ranges::max_element(m_levels);
   float bass = 0.0F;
   for (std::size_t i = 2; i < 9; ++i) {
     bass = std::max(bass, m_levels[i]);
