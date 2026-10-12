@@ -99,7 +99,8 @@ int main() {
     ok = expect(drainUntil([&] { return updates > 0; }), "modal capture was not published") && ok;
     ok = expect(capture.handle(true) == Decision::Deliver, "modal Escape was not delivered") && ok;
     const auto previousUpdates = updates;
-    ok = expect(runtime.enqueueCallArgs("onKey", {std::string("Escape"), true}, {}), "Escape callback was not queued") && ok;
+    ok = expect(runtime.enqueueCallArgs("onKey", {std::string("Escape"), true}, {}), "Escape callback was not queued")
+        && ok;
     ok = expect(drainUntil([&] { return updates > previousUpdates; }), "Escape did not end modal capture") && ok;
     ok = expect(healthy, "Cancel capture script failed") && ok;
     ok = expect(capture.handle(true) == Decision::Repeat, "held Escape leaked after modal exit") && ok;
