@@ -96,8 +96,7 @@ void JellyCat::setValues(std::span<const float> values) {
 
   // A drag suppresses dance so impulses never fight the pointer; history still
   // advances so a release does not replay the drag as a sudden burst.
-  const bool danced =
-      !m_pressed && m_motion.dance(m_levels, m_previousLevels, m_flowPhase, m_sensitivity);
+  const bool danced = !m_pressed && m_motion.dance(m_levels, m_previousLevels, m_flowPhase, m_sensitivity);
   m_previousLevels = m_levels;
   if (danced || m_energyTarget > kTintActiveEnergy) {
     requestWake();
@@ -121,9 +120,7 @@ void JellyCat::clearSpectrum() {
   requestWake();
 }
 
-bool JellyCat::needsFrameTick() const noexcept {
-  return m_motion.active() || m_tintAnimating || audioAnimating();
-}
+bool JellyCat::needsFrameTick() const noexcept { return m_motion.active() || m_tintAnimating || audioAnimating(); }
 
 void JellyCat::tick(float deltaMs) {
   const float ms = std::isfinite(deltaMs) ? std::clamp(deltaMs, 0.0F, 50.0F) : 0.0F;
@@ -304,8 +301,7 @@ void JellyCat::updateAudio(float dt) {
   m_pulse = approach(m_pulse, pulseTarget, kPulseTauMs);
 
   if (m_audioPresent && m_rawEnergy > kFlowAudibleEnergy) {
-    m_flowTarget +=
-        std::min(kFlowMaxStepSeconds, dt) * (0.25F + m_energy * 1.4F + m_pulse * 1.8F);
+    m_flowTarget += std::min(kFlowMaxStepSeconds, dt) * (0.25F + m_energy * 1.4F + m_pulse * 1.8F);
   }
   m_flowPhase = approach(m_flowPhase, m_flowTarget, kFlowTauMs);
 }

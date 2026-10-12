@@ -9,8 +9,7 @@ namespace {
   // delayed upper-body sway X/Z (tunable visual modes, not measured material).
   constexpr std::array<float, JellyCatMotion::kSpringCount> kStiffness = {225.0F, 196.0F, 400.0F, 256.0F,
                                                                           625.0F, 676.0F, 324.0F, 289.0F};
-  constexpr std::array<float, JellyCatMotion::kSpringCount> kDamping = {7.5F, 7.0F, 8.0F, 8.0F,
-                                                                        12.0F, 12.0F, 13.0F, 12.0F};
+  constexpr std::array<float, JellyCatMotion::kSpringCount> kDamping = {7.5F, 7.0F, 8.0F, 8.0F, 12.0F, 12.0F, 13.0F, 12.0F};
   constexpr std::array<float, JellyCatMotion::kSpringCount> kLimits = {0.38F, 0.33F, 0.34F, 0.32F,
                                                                        0.26F, 0.26F, 0.42F, 0.37F};
 
@@ -65,10 +64,8 @@ void JellyCatMotion::poke(float x, float y, float yaw) noexcept {
   const float depth = (0.3F - height) * 2.8F;
   // Hit the main mass; the upper body and ears follow through their springs.
   excite(
-      lateral * std::cos(yaw) + depth * std::sin(yaw),
-      -lateral * std::sin(yaw) + depth * std::cos(yaw),
-      3.0F + (1.0F - height) * 1.6F,
-      side * (height - 0.5F) * 2.2F
+      lateral * std::cos(yaw) + depth * std::sin(yaw), -lateral * std::sin(yaw) + depth * std::cos(yaw),
+      3.0F + (1.0F - height) * 1.6F, side * (height - 0.5F) * 2.2F
   );
 }
 
@@ -101,8 +98,7 @@ bool JellyCatMotion::dance(
     peakRise = std::max(peakRise, rise);
   }
 
-  const float strength =
-      std::clamp(flux / static_cast<float>(kBandCount) * 8.0F + peakRise * 0.6F, 0.0F, 1.0F);
+  const float strength = std::clamp(flux / static_cast<float>(kBandCount) * 8.0F + peakRise * 0.6F, 0.0F, 1.0F);
   if (strength <= 0.0F) {
     return false;
   }
@@ -112,9 +108,7 @@ bool JellyCatMotion::dance(
   const float side = std::cos(phase * 2.0F);
   const float depth = std::sin(phase * 2.0F);
   excite(
-      side * strength * 4.0F * appliedScale,
-      depth * strength * 3.0F * appliedScale,
-      strength * 1.6F * appliedScale,
+      side * strength * 4.0F * appliedScale, depth * strength * 3.0F * appliedScale, strength * 1.6F * appliedScale,
       side * strength * 0.6F * appliedScale
   );
   return true;

@@ -38,8 +38,7 @@ public:
   // Positive per-band flux against `previous`, rotated by the current flow phase.
   // `scale` is the user music sensitivity (1.0 reproduces the original impulse).
   // Returns true when impulses were applied. Rejects sizing/non-finite/out-of-range input.
-  bool
-  dance(std::span<const float> levels, std::span<const float> previous, float phase, float scale) noexcept;
+  bool dance(std::span<const float> levels, std::span<const float> previous, float phase, float scale) noexcept;
 
   // Integrates the springs. `seconds` is clamped to 50 ms and substepped to <=4 ms.
   // Returns true while the motion is still awake.

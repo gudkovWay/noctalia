@@ -257,14 +257,10 @@ void JellyCatProgram::draw(
   glUniform2f(m_surfaceSizeLoc, surfaceWidth, surfaceHeight);
   glUniform2f(m_quadSizeLoc, width, height);
   glUniformMatrix3fv(m_transformLoc, 1, GL_FALSE, transform.m.data());
-  glUniform4f(
-      m_bodyMotionLoc, style.bodyMotion[0], style.bodyMotion[1], style.bodyMotion[2], style.bodyMotion[3]
-  );
+  glUniform4f(m_bodyMotionLoc, style.bodyMotion[0], style.bodyMotion[1], style.bodyMotion[2], style.bodyMotion[3]);
   glUniform2f(m_earMotionLoc, style.earMotion[0], style.earMotion[1]);
   glUniform2f(m_upperMotionLoc, style.upperMotion[0], style.upperMotion[1]);
-  glUniform4f(
-      m_milkColorLoc, style.milkColor.r, style.milkColor.g, style.milkColor.b, style.milkColor.a
-  );
+  glUniform4f(m_milkColorLoc, style.milkColor.r, style.milkColor.g, style.milkColor.b, style.milkColor.a);
   glUniform2f(m_viewportSizeLoc, width, height);
   glUniform2f(m_viewAnglesLoc, style.yaw, style.pitch);
 
