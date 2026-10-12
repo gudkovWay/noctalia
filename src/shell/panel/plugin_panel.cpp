@@ -105,7 +105,6 @@ bool PluginPanel::handleGlobalKey(std::uint32_t sym, std::uint32_t modifiers, bo
     }
   }
 
-
   // Still consumed, so the repeat does not leak to the host, but the script sees one press per
   // physical press.
   if (pressed && match->held) {

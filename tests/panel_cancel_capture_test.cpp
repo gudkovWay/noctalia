@@ -10,7 +10,7 @@ namespace {
     }
     return condition;
   }
-}
+} // namespace
 
 int main() {
   using Decision = PanelCancelCapture::Decision;

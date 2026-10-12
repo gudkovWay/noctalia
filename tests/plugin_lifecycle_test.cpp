@@ -76,6 +76,7 @@ int main() {
   bool ok = true;
 
   {
+    using Decision = PanelCancelCapture::Decision;
     PanelCancelCapture capture;
     int updates = 0;
     bool healthy = true;
@@ -96,14 +97,14 @@ int main() {
         {}
     );
     ok = expect(drainUntil([&] { return updates > 0; }), "modal capture was not published") && ok;
-    ok = expect(capture.handle(true) == PanelCancelCapture::Decision::Deliver, "modal Escape was not delivered") && ok;
+    ok = expect(capture.handle(true) == Decision::Deliver, "modal Escape was not delivered") && ok;
     const auto previousUpdates = updates;
     ok = expect(runtime.enqueueCallArgs("onKey", {std::string("Escape"), true}, {}), "Escape callback was not queued") && ok;
     ok = expect(drainUntil([&] { return updates > previousUpdates; }), "Escape did not end modal capture") && ok;
     ok = expect(healthy, "Cancel capture script failed") && ok;
-    ok = expect(capture.handle(true) == PanelCancelCapture::Decision::Repeat, "held Escape leaked after modal exit") && ok;
-    ok = expect(capture.handle(false) == PanelCancelCapture::Decision::Deliver, "Escape release was lost") && ok;
-    ok = expect(capture.handle(true) == PanelCancelCapture::Decision::Pass, "fresh Escape did not return to host dismissal") && ok;
+    ok = expect(capture.handle(true) == Decision::Repeat, "held Escape leaked after modal exit") && ok;
+    ok = expect(capture.handle(false) == Decision::Deliver, "Escape release was lost") && ok;
+    ok = expect(capture.handle(true) == Decision::Pass, "fresh Escape did not return to host dismissal") && ok;
     bool replayed = false;
     PanelCancelCapture lateCapture;
     const auto lateSubscription = runtime.subscribe([&](const scripting::ScriptResult& result) {
@@ -113,7 +114,7 @@ int main() {
       }
     });
     ok = expect(drainUntil([&] { return replayed; }), "late subscriber did not receive capture state") && ok;
-    ok = expect(lateCapture.handle(true) == PanelCancelCapture::Decision::Pass, "snapshot resurrected cancelled modal capture") && ok;
+    ok = expect(lateCapture.handle(true) == Decision::Pass, "snapshot resurrected cancelled modal capture") && ok;
     runtime.unsubscribe(lateSubscription);
     runtime.unsubscribe(subscription);
   }
