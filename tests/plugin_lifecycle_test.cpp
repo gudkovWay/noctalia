@@ -90,13 +90,24 @@ int main() {
     });
     runtime.start(
         "=cancel",
-        "panel.setCaptureCancel(true)\n"
+        "panel.setCaptureCancel(false)\n"
+        "function onOpen() panel.setCaptureCancel(false) end\n"
+        "function onClose() panel.setCaptureCancel(false) end\n"
+        "function enterHints() panel.setCaptureCancel(true) end\n"
         "function onKey(chord, pressed)\n"
         "  if chord == 'Escape' and pressed then panel.setCaptureCancel(false) end\n"
         "end\n",
         {}
     );
-    ok = expect(drainUntil([&] { return updates > 0; }), "modal capture was not published") && ok;
+    ok = expect(drainUntil([&] { return updates > 0; }), "initial capture reset was not published") && ok;
+    ok = expect(capture.handle(true) == Decision::Pass, "initial reset captured ordinary Escape") && ok;
+    auto lifecycleUpdates = updates;
+    ok = expect(runtime.enqueueCall("onOpen", {}), "panel open callback was not queued") && ok;
+    ok = expect(drainUntil([&] { return updates > lifecycleUpdates; }), "panel open did not reset capture") && ok;
+    ok = expect(capture.handle(true) == Decision::Pass, "panel open captured ordinary Escape") && ok;
+    lifecycleUpdates = updates;
+    ok = expect(runtime.enqueueCall("enterHints", {}), "hint entry callback was not queued") && ok;
+    ok = expect(drainUntil([&] { return updates > lifecycleUpdates; }), "modal capture was not published") && ok;
     ok = expect(capture.handle(true) == Decision::Deliver, "modal Escape was not delivered") && ok;
     const auto previousUpdates = updates;
     ok = expect(runtime.enqueueCallArgs("onKey", {std::string("Escape"), true}, {}), "Escape callback was not queued")
@@ -117,6 +128,15 @@ int main() {
     ok = expect(drainUntil([&] { return replayed; }), "late subscriber did not receive capture state") && ok;
     ok = expect(lateCapture.handle(true) == Decision::Pass, "snapshot resurrected cancelled modal capture") && ok;
     runtime.unsubscribe(lateSubscription);
+    lifecycleUpdates = updates;
+    ok = expect(runtime.enqueueCall("enterHints", {}), "second hint entry was not queued") && ok;
+    ok = expect(drainUntil([&] { return updates > lifecycleUpdates; }), "second hint entry did not publish capture")
+        && ok;
+    lifecycleUpdates = updates;
+    ok = expect(runtime.enqueueCall("onClose", {}), "panel close callback was not queued") && ok;
+    ok = expect(drainUntil([&] { return updates > lifecycleUpdates; }), "panel close did not reset capture") && ok;
+    ok = expect(healthy, "panel load/open/close failed to call native capture API") && ok;
+    ok = expect(capture.handle(true) == Decision::Pass, "panel close left modal capture enabled") && ok;
     runtime.unsubscribe(subscription);
   }
 
