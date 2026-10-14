@@ -2,6 +2,7 @@
 
 #include "config/config_types.h"
 #include "render/core/render_styles.h"
+#include "ui/style.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -59,6 +60,20 @@ struct BarConcaveShape {
       radius(cfg.radiusBottomRight),
       radius(cfg.radiusBottomLeft),
   };
+
+  // Stagecraft structural silhouette: a uniform 45-degree outer cut on every corner,
+  // independent of the user's concave/rounded radius settings, and no concave spikes
+  // (zero inset). The cut is clamped to half the bar thickness so it can never
+  // self-intersect on a thin bar.
+  if (Style::stagecraftEnabled()) {
+    constexpr float kStagecraftBarCut = 14.0F;
+    const float cut = std::min(kStagecraftBarCut, static_cast<float>(cfg.thickness) * 0.5F);
+    g.corners = Style::presentationCorners(CornerShapes{});
+    g.radii = Radii{cut, cut, cut, cut};
+    g.logicalInset = RectInsets{};
+    g.innerBulge = 0.0F;
+    return g;
+  }
 
   if (!cfg.concaveEdgeCorners || cfg.marginEdge > 0) {
     return g;

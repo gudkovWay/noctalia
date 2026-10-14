@@ -3,6 +3,7 @@
 #include "core/input/keybind_matcher.h"
 #include "core/log.h"
 #include "render/core/color.h"
+#include "render/core/render_styles.h"
 #include "render/core/renderer.h"
 #include "render/scene/input_area.h"
 #include "ui/controls/box.h"
@@ -21,6 +22,7 @@
 #include "ui/controls/select.h"
 #include "ui/controls/separator.h"
 #include "ui/controls/slider.h"
+#include "ui/controls/sliding_reveal.h"
 #include "ui/controls/spacer.h"
 #include "ui/controls/toggle.h"
 #include "ui/drag_drop_controller.h"
@@ -305,15 +307,16 @@ namespace ui {
 
     InputArea* inputAreaFromSlot(Node* node) { return dynamic_cast<InputArea*>(node); }
 
-    // The Node that a control's children reconcile into. Flex containers host
-    // their children directly; a wrapped Flex hosts them in its inner Flex; a
-    // ScrollView hosts them in its inner content Flex. Any other control
-    // returns nullptr — it cannot have children.
+    // Flex children use flow layout; Box children layer at their declared x/y.
+    // Wrappers host content in the inner control, preserving input bounds.
     Node* childContainer(const std::string& type, Node* node) {
       if (node == nullptr) {
         return nullptr;
       }
-      if (type == "column" || type == "row") {
+      if (type == "sliding_reveal") {
+        return static_cast<SlidingReveal*>(node)->content();
+      }
+      if (type == "column" || type == "row" || type == "box") {
         if (auto* inputArea = inputAreaFromSlot(node)) {
           const auto& kids = inputArea->children();
           return kids.empty() ? nullptr : kids.front().get();
@@ -458,11 +461,16 @@ namespace ui {
     // silent no-op, so typos in plugin code surface immediately.
     const std::unordered_set<std::string>& knownProps(const std::string& type) {
       static const std::unordered_set<std::string> kCommon = {"width", "height", "flexGrow", "opacity", "visible"};
-      static const std::unordered_set<std::string> kFlex = {"width",     "height",  "flexGrow",    "opacity",
-                                                            "visible",   "gap",     "padding",     "paddingH",
-                                                            "paddingV",  "align",   "justify",     "fill",
-                                                            "radius",    "border",  "borderWidth", "minWidth",
-                                                            "minHeight", "onClick", "onHover",     "tooltip"};
+      static const std::unordered_set<std::string> kReveal = {"width",       "height",      "opacity",
+                                                              "visible",     "handleWidth", "handlePath",
+                                                              "hoverBefore", "coverWidth",  "onClick"};
+      if (type == "sliding_reveal")
+        return kReveal;
+      static const std::unordered_set<std::string> kFlex = {
+          "width",     "height",  "flexGrow", "opacity", "visible", "gap",     "padding",     "paddingH",
+          "paddingV",  "align",   "justify",  "fill",    "radius",  "border",  "borderWidth", "minWidth",
+          "minHeight", "onClick", "onHover",  "tooltip", "shape",   "material"
+      };
       static const std::unordered_set<std::string> kBox = {"width",   "height",  "flexGrow", "opacity",     "visible",
                                                            "fill",    "radius",  "border",   "borderWidth", "softness",
                                                            "onClick", "onHover", "tooltip"};
@@ -480,11 +488,13 @@ namespace ui {
                                                                  "color",   "spacing", "orientation"};
       static const std::unordered_set<std::string> kProgress = {"width",    "height", "flexGrow", "opacity", "visible",
                                                                 "progress", "fill",   "track",    "radius"};
-      static const std::unordered_set<std::string> kButton = {"width",       "height",  "flexGrow",     "opacity",
-                                                              "visible",     "text",    "glyph",        "fontSize",
-                                                              "glyphSize",   "variant", "contentAlign", "enabled",
-                                                              "selected",    "onClick", "onRightClick", "tooltip",
-                                                              "controlSize", "onHover"};
+      static const std::unordered_set<std::string> kButton = {
+          "width",      "height",      "flexGrow",     "opacity",      "visible",      "text",
+          "glyph",      "fontSize",    "glyphSize",    "variant",      "contentAlign", "enabled",
+          "selected",   "onClick",     "onRightClick", "tooltip",      "controlSize",  "onHover",
+          "fill",       "color",       "border",       "borderWidth",  "radius",       "hoverFill",
+          "hoverColor", "pressedFill", "pressedColor", "selectedFill", "selectedColor"
+      };
       static const std::unordered_set<std::string> kGraph = {
           "width", "height", "flexGrow",  "opacity",     "visible",       "values",        "values2",
           "color", "color2", "lineWidth", "fillOpacity", "onPointerMove", "onPointerLeave"
@@ -499,10 +509,10 @@ namespace ui {
       static const std::unordered_set<std::string> kSelect = {"width",       "height",   "flexGrow",      "opacity",
                                                               "visible",     "options",  "selectedIndex", "enabled",
                                                               "placeholder", "onChange", "controlSize"};
-      static const std::unordered_set<std::string> kSlider = {"width",      "height",  "flexGrow", "opacity",
-                                                              "visible",    "min",     "max",      "step",
-                                                              "value",      "enabled", "onChange", "onDragEnd",
-                                                              "controlSize"};
+      static const std::unordered_set<std::string> kSlider = {
+          "width",   "height",   "flexGrow",  "opacity",     "visible", "min",   "max",   "step",      "value",
+          "enabled", "onChange", "onDragEnd", "controlSize", "fill",    "track", "thumb", "focusColor"
+      };
       static const std::unordered_set<std::string> kToggle = {"width",   "height",  "flexGrow", "opacity",
                                                               "visible", "checked", "enabled",  "onChange"};
       static const std::unordered_set<std::string> kScroll = {
@@ -735,6 +745,9 @@ namespace ui {
     }
     if (desired.type == "slider") {
       return std::make_unique<Slider>();
+    }
+    if (desired.type == "sliding_reveal") {
+      return std::make_unique<SlidingReveal>();
     }
     if (desired.type == "toggle") {
       return std::make_unique<Toggle>();
@@ -1064,7 +1077,7 @@ namespace ui {
     const auto& known = knownProps(desired.type);
     for (const auto& [key, value] : desired.props) {
       (void)value;
-      if (!known.contains(key)) {
+      if (key != "x" && key != "y" && key != "clip" && !known.contains(key)) {
         kLog.warn("ui tree: '{}' has no prop '{}', ignored", desired.type, key);
       }
     }
@@ -1089,6 +1102,16 @@ namespace ui {
     }
     if (const double* grow = numProp(desired, "flexGrow")) {
       node->setFlexGrow(static_cast<float>(*grow));
+    }
+    if (const bool* clip = boolProp(desired, "clip")) {
+      node->setClipChildren(*clip);
+    }
+    // Only Box owns absolute child positions. Never disturb retained Flex
+    // positions on a paint-only update; its arrangement owns flow layout.
+    if (dynamic_cast<Box*>(node->parent()) != nullptr) {
+      const double* x = numProp(desired, "x");
+      const double* y = numProp(desired, "y");
+      node->setPosition(x != nullptr ? scaled(*x) : 0.0F, y != nullptr ? scaled(*y) : 0.0F);
     }
 
     const double* width = numProp(desired, "width");
@@ -1216,6 +1239,48 @@ namespace ui {
         }
       } else if (desired.type == "drop_zone") {
         static_cast<DropZone*>(node)->clearZoneRadius(Style::scaledRadiusSm(m_scale));
+      } else if (desired.type == "row" || desired.type == "column") {
+        // A dropped radius clears back to the native square-corner default.
+        flex->setRadius(0.0F);
+      }
+      // Chamfer is a shader silhouette (45-degree corner cuts) carried through
+      // the background rect's corner shapes; omitted/"rounded" clears a retained
+      // chamfer override back to the native rounded corners.
+      if (desired.type == "row" || desired.type == "column") {
+        CornerShapes corners; // all corners convex = rounded
+        if (const std::string* shape = strProp(desired, "shape")) {
+          if (*shape == "chamfer") {
+            corners = CornerShapes{
+                .tl = CornerShape::Chamfer,
+                .tr = CornerShape::Chamfer,
+                .br = CornerShape::Chamfer,
+                .bl = CornerShape::Chamfer,
+            };
+          } else if (*shape != "rounded") {
+            kLog.warn(
+                "ui tree: '{}' key '{}': unknown shape '{}'; rounded used", desired.type,
+                desired.key.empty() ? "<unkeyed>" : desired.key, *shape
+            );
+          }
+        }
+        flex->setCornerShapes(corners);
+      }
+      // Structural material is an explicit selector, never inferred from a
+      // border: omitted resets to None, "stagecraft" turns on the relief frame,
+      // and any other value is a loud skip back to None.
+      if (desired.type == "row" || desired.type == "column") {
+        const std::string* material = strProp(desired, "material");
+        if (material == nullptr) {
+          flex->resetMaterial();
+        } else if (*material == "stagecraft") {
+          flex->setMaterial(RectMaterial::Stagecraft);
+        } else {
+          kLog.warn(
+              "ui tree: '{}' key '{}': unknown material '{}'; none used", desired.type,
+              desired.key.empty() ? "<unkeyed>" : desired.key, *material
+          );
+          flex->resetMaterial();
+        }
       }
       if (auto border = parseColor(desired, "border")) {
         const double* borderWidth = numProp(desired, "borderWidth");
@@ -1248,6 +1313,38 @@ namespace ui {
         }
       }
       syncWrapperCallbacks(slot, desired, node);
+      return;
+    }
+
+    if (desired.type == "sliding_reveal") {
+      auto* reveal = static_cast<SlidingReveal*>(node);
+      if (const double* handleWidth = numProp(desired, "handleWidth")) {
+        reveal->setHandleWidth(scaled(*handleWidth));
+      }
+      const double* hoverBefore = numProp(desired, "hoverBefore");
+      const double* coverWidth = numProp(desired, "coverWidth");
+      reveal->setHoverBefore(hoverBefore ? scaled(*hoverBefore) : 0.0F);
+      reveal->setCoverWidth(coverWidth ? scaled(*coverWidth) : scaled(40.0));
+      if (const std::string* callback = callbackProp(desired, "onClick")) {
+        if (slot.callbackName != *callback) {
+          slot.callbackName = *callback;
+          reveal->setCoverClickCallback([this, name = *callback] {
+            if (m_sink)
+              m_sink(ControlCallback{name});
+          });
+        }
+      } else if (!slot.callbackName.empty()) {
+        slot.callbackName.clear();
+        reveal->setCoverClickCallback({});
+      }
+      reveal->setSize(width ? scaled(*width) : node->width(), height ? scaled(*height) : node->height());
+      if (const std::string* path = strProp(desired, "handlePath")) {
+        const std::string resolved = m_resolver ? m_resolver(*path) : *path;
+        if (slot.imagePath != resolved) {
+          slot.imagePath = resolved;
+          reveal->handleImage()->setSourceFile(renderer, resolved, 0, true);
+        }
+      }
       return;
     }
 
@@ -1478,6 +1575,61 @@ namespace ui {
       if (const bool* selected = boolProp(desired, "selected")) {
         button->setSelected(*selected);
       }
+      // Explicit flat colors build a local ButtonPalette; every derived state
+      // stays on the caller's colors and never borrows a host Primary/Secondary.
+      // With none present a retained override clears back to the variant palette.
+      const auto fillColor = parseColor(desired, "fill");
+      const auto labelColor = parseColor(desired, "color");
+      const auto borderColor = parseColor(desired, "border");
+      const auto hoverFill = parseColor(desired, "hoverFill");
+      const auto hoverColor = parseColor(desired, "hoverColor");
+      const auto pressedFill = parseColor(desired, "pressedFill");
+      const auto pressedColor = parseColor(desired, "pressedColor");
+      const auto selectedFill = parseColor(desired, "selectedFill");
+      const auto selectedColor = parseColor(desired, "selectedColor");
+      const double* paletteBorderWidth = numProp(desired, "borderWidth");
+      const bool styled = fillColor.has_value()
+          || labelColor.has_value()
+          || borderColor.has_value()
+          || hoverFill.has_value()
+          || hoverColor.has_value()
+          || pressedFill.has_value()
+          || pressedColor.has_value()
+          || selectedFill.has_value()
+          || selectedColor.has_value()
+          || paletteBorderWidth != nullptr;
+      if (styled) {
+        constexpr float kDisabledAlpha = 0.55F;
+        const ColorSpec normalBg = fillColor.value_or(clearColorSpec());
+        const ColorSpec normalLabel = labelColor.value_or(clearColorSpec());
+        const ColorSpec normalBorder = borderColor.value_or(clearColorSpec());
+        Button::ButtonPalette palette;
+        palette.borderWidth = paletteBorderWidth != nullptr ? scaled(*paletteBorderWidth)
+                                                            : (borderColor.has_value() ? Style::borderWidth : 0.0F);
+        palette.normal = Button::ButtonStateColors{normalBg, normalBorder, normalLabel};
+        palette.hover =
+            Button::ButtonStateColors{hoverFill.value_or(normalBg), normalBorder, hoverColor.value_or(normalLabel)};
+        palette.pressed =
+            Button::ButtonStateColors{pressedFill.value_or(normalBg), normalBorder, pressedColor.value_or(normalLabel)};
+        palette.disabled = Button::ButtonStateColors{
+            scaleAlpha(normalBg, kDisabledAlpha), scaleAlpha(normalBorder, Style::disabledOutlineAlpha),
+            scaleAlpha(normalLabel, kDisabledAlpha)
+        };
+        if (selectedFill.has_value() || selectedColor.has_value()) {
+          palette.selected = Button::ButtonStateColors{
+              selectedFill.value_or(normalBg), normalBorder, selectedColor.value_or(normalLabel)
+          };
+        }
+        button->setCustomPalette(palette);
+      } else {
+        button->clearCustomPalette();
+      }
+      // Explicit radius, or the native button radius when the prop is removed.
+      if (const double* radius = numProp(desired, "radius")) {
+        button->setRadius(scaled(*radius));
+      } else {
+        button->setRadius(Style::scaledRadiusMd());
+      }
       // Unconditional: a tooltip dropped between renders must clear on the
       // retained Button. An empty text routes to InputArea::clearTooltip().
       const std::string* tooltip = strProp(desired, "tooltip");
@@ -1623,6 +1775,19 @@ namespace ui {
       }
       if (const bool* enabled = boolProp(desired, "enabled")) {
         slider->setEnabled(*enabled);
+      }
+      // Optional local palette: absent resets the native role colors; hover,
+      // press and disabled derive from whatever the caller supplied.
+      const auto sliderFill = parseColor(desired, "fill");
+      const auto sliderTrack = parseColor(desired, "track");
+      const auto sliderThumb = parseColor(desired, "thumb");
+      const auto sliderFocus = parseColor(desired, "focusColor");
+      if (sliderFill.has_value() || sliderTrack.has_value() || sliderThumb.has_value() || sliderFocus.has_value()) {
+        slider->setCustomPalette(
+            Slider::SliderPalette{.track = sliderTrack, .fill = sliderFill, .thumb = sliderThumb, .focus = sliderFocus}
+        );
+      } else {
+        slider->clearCustomPalette();
       }
       if (const std::string* onChange = strProp(desired, "onChange");
           onChange != nullptr && *onChange != slot.callbackName) {

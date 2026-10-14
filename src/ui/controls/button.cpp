@@ -142,6 +142,24 @@ namespace {
           .selected = selectedState(),
       };
     case ButtonVariant::Tab:
+      if (Style::kumihimoEnabled()) {
+        return Button::ButtonPalette{
+            .borderWidth = Style::borderWidth,
+            .normal = makeState(clearColorSpec(), clearColorSpec(), colorSpecFromRole(ColorRole::OnSurfaceVariant)),
+            .hover = makeState(
+                colorSpecFromRole(ColorRole::SurfaceVariant), colorSpecFromRole(ColorRole::Outline, 0.6F),
+                colorSpecFromRole(ColorRole::OnSurface)
+            ),
+            .pressed = makeState(
+                colorSpecFromRole(ColorRole::SurfaceVariant), colorSpecFromRole(ColorRole::Primary),
+                colorSpecFromRole(ColorRole::OnSurface)
+            ),
+            .disabled = makeState(
+                clearColorSpec(), clearColorSpec(), colorSpecFromRole(ColorRole::OnSurfaceVariant, kDisabledAlpha)
+            ),
+            .selected = std::nullopt,
+        };
+      }
       return Button::ButtonPalette{
           .borderWidth = 0.0F,
           .normal = makeState(clearColorSpec(), clearColorSpec(), colorSpecFromRole(ColorRole::OnSurface)),
@@ -154,6 +172,24 @@ namespace {
           .selected = std::nullopt,
       };
     case ButtonVariant::TabActive:
+      if (Style::kumihimoEnabled()) {
+        const auto selected = makeState(
+            colorSpecFromRole(ColorRole::SurfaceVariant), colorSpecFromRole(ColorRole::Primary),
+            colorSpecFromRole(ColorRole::OnSurface)
+        );
+        return Button::ButtonPalette{
+            .borderWidth = Style::borderWidth,
+            .normal = selected,
+            .hover = selected,
+            .pressed = selected,
+            .disabled = makeState(
+                colorSpecFromRole(ColorRole::SurfaceVariant, kDisabledAlpha),
+                colorSpecFromRole(ColorRole::Outline, kDisabledAlpha),
+                colorSpecFromRole(ColorRole::OnSurfaceVariant, kDisabledAlpha)
+            ),
+            .selected = std::nullopt,
+        };
+      }
       return Button::ButtonPalette{
           .borderWidth = 0.0F,
           .normal = makeState(
@@ -481,7 +517,18 @@ void Button::setVariant(ButtonVariant variant) {
 }
 
 void Button::setCustomPalette(ButtonPalette customPalette) {
+  if (m_customPalette.has_value() && *m_customPalette == customPalette) {
+    return;
+  }
   m_customPalette = customPalette;
+  applyVariant();
+}
+
+void Button::clearCustomPalette() {
+  if (!m_customPalette.has_value()) {
+    return;
+  }
+  m_customPalette.reset();
   applyVariant();
 }
 
@@ -494,8 +541,22 @@ void Button::setSurfaceOpacity(float opacity) {
   applyVariant();
 }
 
+void Button::setPresentationChrome(bool enabled) {
+  if (m_presentationChromeOverride.has_value() && *m_presentationChromeOverride == enabled) {
+    return;
+  }
+  m_presentationChromeOverride = enabled;
+  applyVariant();
+}
+
 void Button::applyVariant() {
-  m_palette = m_customPalette.value_or(paletteForVariant(m_variant));
+  m_palette = m_customPalette.has_value() ? *m_customPalette : paletteForVariant(m_variant);
+  // A custom palette owns the button's look, so it keeps its own silhouette;
+  // variant chrome follows the presentation profile.
+  Flex::setPresentationChrome(m_presentationChromeOverride.value_or(!m_customPalette.has_value()));
+  if (!m_customPalette.has_value() && (m_variant == ButtonVariant::Tab || m_variant == ButtonVariant::TabActive)) {
+    setCornerShapes(Style::kumihimoEnabled() ? CornerShapes{.br = CornerShape::Chamfer} : CornerShapes{});
+  }
   if (m_surfaceOpacity < 1.0F) {
     m_palette.normal.bg.alpha *= m_surfaceOpacity;
     m_palette.disabled.bg.alpha *= m_surfaceOpacity;
@@ -607,7 +668,11 @@ float Button::effectiveBorderWidth() const noexcept {
 void Button::resolveVisualStateColors(Color& targetBg, Color& targetBorder, Color& targetLabel) const {
   const bool isKeyboardFocused = m_enabled && m_keyboardFocusHint;
   const bool isInputFocused = m_enabled && m_inputArea != nullptr && m_inputArea->focused();
-  const bool keyboardNavFocus = isKeyboardFocused
+  // A styled (custom-palette) button owns its focus colors: never borrow the
+  // host Secondary accent for keyboard navigation. The hover/selected colors
+  // supplied by the caller carry the local focus state instead.
+  const bool keyboardNavFocus = !m_customPalette.has_value()
+      && isKeyboardFocused
       && (m_variant == ButtonVariant::TabActive
           || m_variant == ButtonVariant::Tab
           || m_variant == ButtonVariant::Ghost);
@@ -631,9 +696,13 @@ void Button::resolveVisualStateColors(Color& targetBg, Color& targetBorder, Colo
     targetBorder = resolveColorSpec(m_palette.selected->border);
     targetLabel = resolveColorSpec(m_palette.selected->label);
   } else if (keyboardNavFocus) {
-    targetBg = resolveColorSpec(colorSpecFromRole(ColorRole::Secondary));
-    targetBorder = resolveColorSpec(clearColorSpec());
-    targetLabel = resolveColorSpec(colorSpecFromRole(ColorRole::OnSecondary));
+    targetBg = resolveColorSpec(
+        colorSpecFromRole(Style::kumihimoEnabled() ? ColorRole::SurfaceVariant : ColorRole::Secondary)
+    );
+    targetBorder =
+        Style::kumihimoEnabled() ? resolveColorSpec(focusRingColorSpec()) : resolveColorSpec(clearColorSpec());
+    targetLabel =
+        resolveColorSpec(colorSpecFromRole(Style::kumihimoEnabled() ? ColorRole::OnSurface : ColorRole::OnSecondary));
   } else if (isHovered || isSelected) {
     targetBg = resolveColorSpec(m_palette.hover.bg);
     targetBorder = resolveColorSpec(m_palette.hover.border);

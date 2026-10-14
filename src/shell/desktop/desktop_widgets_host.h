@@ -7,6 +7,7 @@
 #include "shell/desktop/desktop_widget_factory.h"
 #include "shell/desktop/desktop_widgets_controller.h"
 #include "shell/desktop/wallpaper_mask.h"
+#include "ui/signal.h"
 #include "wayland/layer_surface.h"
 
 #include <memory>
@@ -80,4 +81,6 @@ private:
   bool m_visible = false;
   std::vector<std::unique_ptr<DesktopWidgetInstance>> m_instances;
   std::unordered_map<std::string, LoadedWallpaperMask> m_wallpaperMasks;
+  Signal<>::ScopedConnection m_paletteConn;
+  bool m_appliedStagecraft = false;
 };

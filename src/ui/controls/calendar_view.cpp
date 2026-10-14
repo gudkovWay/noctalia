@@ -517,6 +517,7 @@ namespace calendar_view {
 
           Flex* row = eventRow;
           row->setRadius(Style::radiusSm * options.scale);
+          row->setPresentationChrome(true);
           const auto setHovered = [row, titleLabel, timeLabel, linkGlyph, eventAlpha,
                                    requestRedraw = options.requestRedraw](bool hovered) {
             if (hovered) {

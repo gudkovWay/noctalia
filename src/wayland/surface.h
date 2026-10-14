@@ -109,9 +109,11 @@ public:
   );
   // Tessellates a rounded rectangle rotated by `rotationRad` around its center
   // (`centerX`, `centerY`) into axis-aligned horizontal strips. When `rotationRad`
-  // is zero this reduces to a plain tessellateRoundedRect call.
+  // is zero this reduces to a plain tessellateRoundedRect call. With `chamfered`,
+  // every corner is a straight 45-degree cut of size `radius` instead of an arc.
   static std::vector<InputRect> tessellateRotatedRoundedRect(
-      float centerX, float centerY, float width, float height, float radius, float rotationRad, int stripPx = 1
+      float centerX, float centerY, float width, float height, float radius, float rotationRad, bool chamfered = false,
+      int stripPx = 1
   );
   // True when any rect covers at least one pixel of a `width` x `height` surface.
   // Rects are surface-local, so they may legitimately sit partly or fully outside.

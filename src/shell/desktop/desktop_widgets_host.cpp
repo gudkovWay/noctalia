@@ -12,6 +12,8 @@
 #include "shell/wallpaper/wallpaper_geometry.h"
 #include "time/time_format.h"
 #include "ui/builders.h"
+#include "ui/palette.h"
+#include "ui/style.h"
 #include "wayland/layer_surface.h"
 #include "wayland/wayland_connection.h"
 #include "wayland/wayland_seat.h"
@@ -54,6 +56,22 @@ void DesktopWidgetsHost::initialize(const DesktopWidgetServices& services) {
   m_renderContext = services.renderContext;
   m_textureCache = services.textureCache;
   m_factory = std::make_unique<DesktopWidgetFactory>(services.runtime);
+  m_appliedStagecraft = Style::stagecraftEnabled();
+  m_paletteConn = paletteChanged().connect([this] {
+    const bool stagecraft = Style::stagecraftEnabled();
+    if (stagecraft == m_appliedStagecraft) {
+      return;
+    }
+    m_appliedStagecraft = stagecraft;
+    // Re-run each widget's layout so its background card adopts the chamfered (or
+    // restored rounded) corner shape, and the blur region is re-tessellated to match.
+    for (auto& instance : m_instances) {
+      if (instance->surface != nullptr) {
+        instance->surface->requestLayout();
+        instance->surface->requestRedraw();
+      }
+    }
+  });
 }
 
 void DesktopWidgetsHost::releaseWallpaperMasks() {
@@ -495,7 +513,7 @@ void DesktopWidgetsHost::prepareFrame(DesktopWidgetInstance& instance, bool need
     const float radius = instance.widget->backgroundRadius();
     auto blurStrips = Surface::tessellateRotatedRoundedRect(
         geometry.contentOffsetX, geometry.contentOffsetY, instance.intrinsicWidth, instance.intrinsicHeight, radius,
-        instance.state.rotationRad
+        instance.state.rotationRad, instance.widget->backgroundChamfered()
     );
     instance.surface->setBlurRegion(blurStrips);
   } else {

@@ -114,6 +114,8 @@ PluginWidget::PluginWidget(
   m_audioSpectrumEnabled = settingBool(m_settings, "audio_spectrum", false);
   m_audioSpectrumBands =
       static_cast<int>(std::clamp<std::int64_t>(settingInt(m_settings, "audio_spectrum_bands", 16), 1, 128));
+  m_barSurface = settingBool(m_settings, "bar_surface", false);
+  m_barSurfaceInset = static_cast<float>(settingInt(m_settings, "bar_surface_inset", 0));
   scripting::PluginIpcRouter::instance().registerEndpoint(this);
 }
 
@@ -152,8 +154,12 @@ std::filesystem::path PluginWidget::resolvePluginPath(std::string_view path) con
 
 void PluginWidget::create() {
   auto area = ui::inputArea({});
-  area->setAcceptedButtons(InputArea::buttonMask({BTN_LEFT, BTN_RIGHT, BTN_MIDDLE}));
-  area->setCursorShape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER);
+  area->setAcceptedButtons(
+      isBarSurface() ? InputArea::buttonMask({BTN_RIGHT, BTN_MIDDLE})
+                     : InputArea::buttonMask({BTN_LEFT, BTN_RIGHT, BTN_MIDDLE})
+  );
+  if (!isBarSurface())
+    area->setCursorShape(WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER);
   area->setOnClick([this](const InputArea::PointerData& data) {
     if (!m_runtime)
       return;
@@ -323,6 +329,19 @@ void PluginWidget::handleAudioSpectrumChanged() {
   (void)m_runtime->enqueueCallStrings(
       "onAudioSpectrum", joinSpectrumValues(m_audioSpectrum->values(m_audioSpectrumListenerId)), state,
       makeScriptSnapshot(), /*coalesce=*/true
+  );
+}
+
+void PluginWidget::setBarGeometry(float width, float height, float startWidth, float endWidth) {
+  const std::array<float, 4> geometry{width, height, startWidth, endWidth};
+  if (!m_runtime || geometry == m_barGeometry)
+    return;
+  m_barGeometry = geometry;
+  (void)m_runtime->enqueueCallArgs(
+      "onBarGeometry",
+      {static_cast<double>(width), static_cast<double>(height), static_cast<double>(startWidth),
+       static_cast<double>(endWidth)},
+      makeScriptSnapshot(), {.coalesce = true}
   );
 }
 
@@ -879,6 +898,7 @@ void PluginWidget::reloadScript() {
     m_label->setVisible(false);
   }
   m_tree.reset();
+  m_barGeometry = {};
   m_warnedImperativeWhileDeclarative = false;
   if (m_uiHost)
     m_uiHost->setVisible(false);

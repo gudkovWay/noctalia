@@ -1,8 +1,11 @@
+#include "render/animation/animation_manager.h"
+#include "render/animation/motion_service.h"
 #include "render/backend/render_backend.h"
 #include "render/core/renderer.h"
 #include "render/core/texture_manager.h"
 #include "render/scene/glyph_node.h"
 #include "render/scene/input_area.h"
+#include "render/scene/input_dispatcher.h"
 #include "render/scene/rect_node.h"
 #include "ui/controls/box.h"
 #include "ui/controls/button.h"
@@ -16,6 +19,7 @@
 #include "ui/controls/scroll_view.h"
 #include "ui/controls/select.h"
 #include "ui/controls/slider.h"
+#include "ui/controls/sliding_reveal.h"
 #include "ui/controls/spacer.h"
 #include "ui/controls/toggle.h"
 #include "ui/drag_drop_controller.h"
@@ -145,6 +149,192 @@ namespace {
 int main() {
   bool ok = true;
   StubRenderer renderer;
+
+  // One hover envelope covers the stationary cover, grips and revealed text.
+  // Empty bar layout lanes must not swallow it or disable foreground controls.
+  {
+    ui::UiTreeReconciler reconciler;
+    std::string fired;
+    reconciler.setCallbackSink([&](const ui::UiTreeReconciler::ControlCallback& cb) { fired = cb.fn; });
+    Node scene;
+    scene.setSize(600.0F, 100.0F);
+    auto& host = *static_cast<Flex*>(scene.addChild(std::make_unique<Flex>()));
+    host.setPosition(100.0F, 0.0F);
+    auto lane = std::make_unique<Node>();
+    lane->setSize(600.0F, 56.0F);
+    lane->setClipChildren(true);
+    lane->setHitTestSelf(false);
+    auto foreground = std::make_unique<InputArea>();
+    foreground->setPosition(400.0F, 0.0F);
+    foreground->setSize(30.0F, 70.0F);
+    auto* foregroundPtr = lane->addChild(std::move(foreground));
+    scene.addChild(std::move(lane));
+    ok = expect(
+             Node::hitTest(&scene, 410.0F, 20.0F) == foregroundPtr, "transparent layout retains foreground hit targets"
+         )
+        && ok;
+    ok = expect(
+             Node::hitTest(&scene, 410.0F, 65.0F) != foregroundPtr, "transparent layout still clips overflowing input"
+         )
+        && ok;
+    auto tree = makeNode("sliding_reveal");
+    tree.key = "music-reveal";
+    tree.props = {{"width", 247.0},      {"height", 56.0},     {"handleWidth", 27.0},
+                  {"hoverBefore", 67.0}, {"coverWidth", 40.0}, {"onClick", std::string("openMusic")}};
+    tree.children.push_back(makeLabel("Track A", "title"));
+    tree.children.front().props["x"] = 12.0;
+    tree.children.front().props["y"] = 9.0;
+    reconciler.reconcile(host, tree, renderer);
+    host.layout(renderer);
+    auto* reveal = findFirst<SlidingReveal>(host);
+    ok = expect(reveal && reveal->revealWidth() == 0.0F, "music starts closed") && ok;
+    if (reveal) {
+      InputDispatcher dispatcher;
+      dispatcher.setSceneRoot(&scene);
+      dispatcher.pointerEnter(280.0F, 20.0F, 1);
+      ok = expect(reveal->revealWidth() == 0.0F, "invisible future text area must not trigger hover") && ok;
+      dispatcher.pointerMotion(80.0F, 20.0F, 2);
+      ok = expect(
+               reveal->revealWidth() == 220.0F && reveal->x() == 0.0F,
+               "cover hover opens metadata without moving its root"
+           )
+          && ok;
+      dispatcher.pointerMotion(175.0F, 20.0F, 3);
+      ok = expect(reveal->revealWidth() == 220.0F, "cover-to-text transition keeps the player open") && ok;
+      dispatcher.pointerButton(175.0F, 20.0F, BTN_LEFT, true, 1, 4, false);
+      dispatcher.pointerButton(175.0F, 20.0F, BTN_LEFT, false, 1, 5, false);
+      ok = expect(fired.empty(), "metadata and grip do not activate the cover action") && ok;
+      dispatcher.pointerMotion(80.0F, 20.0F, 6);
+      dispatcher.pointerButton(80.0F, 20.0F, BTN_LEFT, true, 1, 7, false);
+      dispatcher.pointerButton(80.0F, 20.0F, BTN_LEFT, false, 1, 8, false);
+      ok = expect(fired == "openMusic", "cover remains clickable inside the hover envelope") && ok;
+      tree.children.front().props["text"] = std::string("Track B");
+      reconciler.reconcile(host, tree, renderer);
+      host.layout(renderer);
+      ok = expect(
+               findFirst<SlidingReveal>(host) == reveal && reveal->revealWidth() == 220.0F,
+               "metadata refresh preserves hover expansion"
+           )
+          && ok;
+      auto* title = findFirst<Label>(*reveal->content());
+      ok = expect(
+               title && title->x() == 12.0F && title->y() == 9.0F,
+               "revealed metadata retains its inset instead of covering the rail"
+           )
+          && ok;
+      tree.props["width"] = 127.0;
+      reconciler.reconcile(host, tree, renderer);
+      host.layout(renderer);
+      ok = expect(reveal->revealWidth() == 100.0F, "resize reclamps before adjacent tray") && ok;
+      dispatcher.pointerMotion(450.0F, 80.0F, 9);
+      ok = expect(
+               reveal->revealWidth() == 0.0F && !reveal->content()->visible(),
+               "leaving the complete player hides every metadata pixel"
+           )
+          && ok;
+      dispatcher.pointerMotion(45.0F, 20.0F, 10);
+      ok = expect(reveal->revealWidth() == 100.0F, "stationary left grip also opens the player") && ok;
+      dispatcher.pointerLeave();
+      ok = expect(reveal->revealWidth() == 0.0F, "leaving the bar closes the player") && ok;
+    }
+  }
+
+  // Retargeting uses the current width; metadata refresh cannot restart motion.
+  {
+    AnimationManager animations;
+    MotionService::instance().setEnabled(true);
+    ui::UiTreeReconciler reconciler;
+    Flex host;
+    host.setAnimationManager(&animations);
+    auto tree = makeNode("sliding_reveal");
+    tree.props = {{"width", 247.0}, {"height", 56.0}, {"hoverBefore", 67.0}};
+    reconciler.reconcile(host, tree, renderer);
+    host.layout(renderer);
+    auto* reveal = findFirst<SlidingReveal>(host);
+    InputDispatcher dispatcher;
+    dispatcher.setSceneRoot(&host);
+    dispatcher.pointerEnter(13.0F, 20.0F, 1);
+    ok = expect(
+             reveal && animations.hasActive() && reveal->revealWidth() == 0.0F,
+             "hover starts native motion instead of jumping to the endpoint"
+         )
+        && ok;
+    if (reveal) {
+      animations.tick(0.0F);
+      const float current = reveal->revealWidth();
+      dispatcher.pointerMotion(500.0F, 80.0F, 2);
+      ok = expect(reveal->revealWidth() == current, "hover exit reverses without a position jump") && ok;
+      dispatcher.pointerMotion(13.0F, 20.0F, 3);
+      ok = expect(reveal->revealWidth() == current, "quick re-entry resumes from the current width") && ok;
+      reconciler.reconcile(host, tree, renderer);
+      host.layout(renderer);
+      ok = expect(reveal->revealWidth() == current, "declarative refresh preserves an intermediate animation frame")
+          && ok;
+      MotionService::instance().setEnabled(false);
+      animations.tick(0.0F);
+      ok = expect(reveal->revealWidth() == 220.0F, "reduced motion settles at the latest hover target") && ok;
+      MotionService::instance().setEnabled(true);
+      dispatcher.pointerLeave();
+      ok = expect(animations.hasActive(), "hover exit starts closing animation") && ok;
+      reconciler.reconcile(host, makeNode("box"), renderer);
+      ok = expect(!animations.hasActive(), "removing the player cancels its native animation") && ok;
+    }
+    MotionService::instance().setEnabled(true);
+  }
+
+  // A fixed-size box layers native children without expanding the bar slot.
+  // Offsets are logical pixels, retained through layout, and reset when omitted.
+  {
+    ui::UiTreeReconciler reconciler;
+    reconciler.setScale(1.25F);
+    Flex host;
+    auto tree = makeNode("box");
+    tree.key = "preview";
+    tree.props = {
+        {"width", 320.0}, {"height", 56.0}, {"fill", std::string("#00000000")}, {"onClick", std::string("openMusic")}
+    };
+    auto inset = makeNode("box");
+    inset.key = "cover";
+    inset.props = {{"x", 24.0}, {"y", 4.0}, {"width", 48.0}, {"height", 48.0}};
+    tree.children.push_back(inset);
+    tree.children.push_back(makeLabel("Track", "title"));
+    tree.children.back().props.emplace("x", 80.0);
+    tree.children.back().props.emplace("y", 12.0);
+    reconciler.reconcile(host, tree, renderer);
+    host.layout(renderer);
+    auto* frame = findFirst<Box>(host);
+    ok = expect(frame != nullptr, "layered preview retains its native box") && ok;
+    if (frame != nullptr) {
+      ok = expect(
+               frame->width() == 400.0F && frame->height() == 70.0F,
+               "overlay children do not enlarge the declared bar slot"
+           )
+          && ok;
+      ok = expect(frame->children().size() == 3, "box retains chrome and both overlay children") && ok;
+      if (frame->children().size() == 3) {
+        Node* cover = frame->children()[1].get();
+        Node* title = frame->children()[2].get();
+        ok = expect(
+                 cover->x() == 30.0F && cover->y() == 5.0F && cover->width() == 60.0F && cover->height() == 60.0F,
+                 "cover is laid out at its scaled inset"
+             )
+            && ok;
+        ok = expect(title->x() == 100.0F && title->y() == 15.0F, "title layers independently above the glass") && ok;
+        tree.children[0].props.erase("x");
+        tree.children[0].props.erase("y");
+        reconciler.reconcile(host, tree, renderer);
+        host.layout(renderer);
+        ok = expect(
+                 frame->children()[1].get() == cover && cover->x() == 0.0F && cover->y() == 0.0F,
+                 "omitted overlay offsets reset without replacing the cover"
+             )
+            && ok;
+        tree.children.clear();
+        reconciler.reconcile(host, tree, renderer);
+        ok = expect(frame->children().size() == 1, "removing overlay content preserves the native chrome") && ok;
+      }
+    }
+  }
 
   // Build: column{ label, box, spacer } reconciled as the host's single child.
   {

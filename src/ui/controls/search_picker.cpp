@@ -28,6 +28,7 @@ namespace {
       setGap(Style::spaceSm);
       setPadding(Style::spaceXs, Style::spaceSm);
       setRadius(Style::scaledRadiusMd());
+      setPresentationChrome(true);
       setFillWidth(true);
 
       auto preview = std::make_unique<ColorSwatchPreviewStrip>();
@@ -140,6 +141,7 @@ SearchPicker::SearchPicker() {
   setFill(colorSpecFromRole(ColorRole::Surface));
   setBorder(colorSpecFromRole(ColorRole::Outline), Style::borderWidth);
   setRadius(Style::scaledRadiusMd());
+  setPresentationChrome(true);
   setSize(kDefaultWidth, kDefaultHeight);
 
   addChild(

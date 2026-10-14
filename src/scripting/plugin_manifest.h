@@ -97,6 +97,14 @@ namespace scripting {
     // gesture vocabulary and action grammar belong to the bar, not to the manifest parser.
     std::vector<std::pair<std::string, std::string>> widgetActions;
 
+    // Optional native PipeWire subscription defaults; omitted keys still inherit
+    // declared plugin settings before the host's disabled/16-band fallback.
+    std::optional<bool> widgetAudioSpectrum;
+    std::optional<int> widgetAudioSpectrumBands;
+    // Opt-in horizontal full-bar underlay; ordinary lanes remain above it.
+    bool widgetBarSurface = false;
+    int widgetBarSurfaceInset = 0;
+
     // Launcher-provider routing metadata (parsed only for LauncherProvider entries);
     // static so the launcher routes/filters without invoking the plugin.
     std::string launcherPrefix;
@@ -135,6 +143,10 @@ namespace scripting {
     // true: live outside PanelManager's single active-panel slot, so opening another
     // panel leaves this one on screen. Requires panelDismissOnOutsideClick = false.
     bool panelPersistent = false;
+    // true (default): the host draws the standard panel backdrop, padding, and shadow.
+    // false: the surface is undecorated — no backdrop, padding, or shadow — so the
+    // script's own root renders the material. Optional `[[panel]]` key `decoration`.
+    bool panelDecoration = true;
     // Key chord specs ("space", "ctrl+r") this panel takes over while it holds keyboard
     // focus. Each is validated as a chord at parse time. While focused, a matching press
     // or release is delivered to the script's onKey(chord, pressed) and not handled by
@@ -169,10 +181,9 @@ namespace scripting {
   // Canonical plugin version: three non-negative decimal components without leading zeros.
   [[nodiscard]] bool isValidPluginVersion(std::string_view version);
 
-  // Build the runtime settings for an instance: every declared field seeded with
-  // its manifest default, then overlaid by the instance's configured values.
-  // Only declared keys are emitted, so a `getConfig` of an undeclared key stays a
-  // loud miss rather than silently resolving from a stray override.
+  // Build runtime settings: declared defaults overlaid by configured values,
+  // plus host subscription defaults for bar widgets. Undeclared user overrides
+  // are ignored; explicit setting declarations take precedence over host defaults.
   [[nodiscard]] std::unordered_map<std::string, WidgetSettingValue>
   seedEntrySettings(const PluginEntry& entry, const std::unordered_map<std::string, WidgetSettingValue>& overrides);
 

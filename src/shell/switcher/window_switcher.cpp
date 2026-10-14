@@ -1671,8 +1671,9 @@ void WindowSwitcher::positionPanel(Instance& instance, float screenW, float scre
     const int blurY = static_cast<int>(std::floor(top));
     const int blurW = std::max(1, static_cast<int>(std::ceil(right) - std::floor(left)));
     const int blurH = std::max(1, static_cast<int>(std::ceil(bottom) - std::floor(top)));
-    auto strips =
-        Surface::tessellateRoundedRect(blurX, blurY, blurW, blurH, Style::scaledRadiusXl(instance.uiLayoutScale));
+    auto strips = Surface::tessellateShape(
+        blurX, blurY, blurW, blurH, Style::presentationCorners(), {}, Style::scaledRadiusXl(instance.uiLayoutScale)
+    );
     blurRects.insert(blurRects.end(), strips.begin(), strips.end());
   }
   for (const WindowSwitcherTile* tile : instance.tiles) {
@@ -1688,8 +1689,9 @@ void WindowSwitcher::positionPanel(Instance& instance, float screenW, float scre
     const int blurY = static_cast<int>(std::floor(top));
     const int blurW = std::max(1, static_cast<int>(std::ceil(right) - std::floor(left)));
     const int blurH = std::max(1, static_cast<int>(std::ceil(bottom) - std::floor(top)));
-    auto strips =
-        Surface::tessellateRoundedRect(blurX, blurY, blurW, blurH, Style::scaledRadiusXl(instance.uiLayoutScale));
+    auto strips = Surface::tessellateShape(
+        blurX, blurY, blurW, blurH, Style::presentationCorners(), {}, Style::scaledRadiusXl(instance.uiLayoutScale)
+    );
     blurRects.insert(blurRects.end(), strips.begin(), strips.end());
   }
   if (instance.countBackground != nullptr) {
@@ -1702,8 +1704,9 @@ void WindowSwitcher::positionPanel(Instance& instance, float screenW, float scre
     const int blurY = static_cast<int>(std::floor(top));
     const int blurW = std::max(1, static_cast<int>(std::ceil(right) - std::floor(left)));
     const int blurH = std::max(1, static_cast<int>(std::ceil(bottom) - std::floor(top)));
-    auto strips =
-        Surface::tessellateRoundedRect(blurX, blurY, blurW, blurH, Style::scaledRadiusMd(instance.uiLayoutScale));
+    auto strips = Surface::tessellateShape(
+        blurX, blurY, blurW, blurH, Style::presentationCorners(), {}, Style::scaledRadiusMd(instance.uiLayoutScale)
+    );
     blurRects.insert(blurRects.end(), strips.begin(), strips.end());
   }
   instance.surface->setBlurRegion(blurRects);
@@ -1770,6 +1773,7 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
           .radius = Style::scaledRadiusXl(scale),
           .visible = layout.boxed,
           .participatesInLayout = false,
+          .configure = [](Box& box) { box.setPresentationChrome(true); },
       })
   );
   std::optional<ColorSpec> iconTint;
@@ -1780,7 +1784,7 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
       m_config != nullptr ? m_config->config().shell.shadow : ShellConfig::ShadowConfig{};
   const float cardRadius = Style::scaledRadiusXl(scale);
   const RoundedRectStyle selectedShadowStyle = shell::surface_shadow::style(
-      shadowConfig, 1.0F, shell::surface_shadow::Shape{.radius = Radii{cardRadius, cardRadius, cardRadius, cardRadius}}
+      shadowConfig, 1.0F, shell::surface_shadow::Shape{.corners = Style::presentationCorners(), .radius = cardRadius}
   );
   auto strip = ui::inputArea({
       .out = &instance.strip,
@@ -1830,6 +1834,7 @@ void WindowSwitcher::buildScene(Instance& instance, std::uint32_t width, std::ui
         .width = layout.countWidth,
         .height = layout.countHeight,
         .participatesInLayout = false,
+        .configure = [](Box& box) { box.setPresentationChrome(true); },
     });
     countBackground->addChild(
         ui::label({

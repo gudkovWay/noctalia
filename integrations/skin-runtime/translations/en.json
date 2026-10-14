@@ -1,0 +1,37 @@
+{
+  "settings.applied_variant.label": "Applied variant",
+  "settings.applied_variant.description": "Variant id of the recipe the native SkinService last applied; empty when no profile is active.",
+  "settings.family.label": "Skin family",
+  "settings.family.description": "Recipe family applied by the native SkinService. Stagecraft and Kumihimo are implemented; other families stay unavailable until their code wave.",
+  "settings.family.option.stagecraft": "Stagecraft",
+  "settings.family.option.cut-stone": "Cut Stone",
+  "settings.family.option.wayfinding-field": "Wayfinding Field",
+  "settings.family.option.adaptive-workbench": "Adaptive Workbench",
+  "settings.family.option.kumihimo": "Kumihimo",
+
+  "settings.density.label": "Density",
+  "settings.density.description": "Compact tightens spacing and control sizes; comfortable is the default Stagecraft rhythm.",
+  "settings.density.option.comfortable": "Comfortable",
+  "settings.density.option.compact": "Compact",
+
+  "settings.topology.label": "Topology",
+  "settings.topology.description": "Where the persistent music scene and the System panel live. Published with the recipe; the native host also moves the music panel to match. Kumihimo's hanging-tags topology instead owns the transparent top bar and the Stagecraft scenes stay closed.",
+  "settings.topology.option.top-music-side": "Top music, side system",
+  "settings.topology.option.top-music-bottom": "Top music, bottom system",
+  "settings.topology.option.desktop-widget-side": "Desktop widget, side system",
+  "settings.topology.option.compact-rail": "Compact rail",
+  "settings.topology.option.hanging-tags": "Hanging tags",
+
+  "settings.surface.label": "Surface",
+  "settings.surface.description": "Primary charcoal surface color of the Stagecraft material.",
+  "settings.surface_variant.label": "Surface variant",
+  "settings.surface_variant.description": "Secondary surface color for tracks, meters and inner plates.",
+  "settings.text.label": "Text",
+  "settings.text.description": "Primary text color on Stagecraft surfaces.",
+  "settings.muted.label": "Muted text",
+  "settings.muted.description": "Secondary text color for labels, meta and Unknown states.",
+  "settings.accent.label": "Accent",
+  "settings.accent.description": "Subtle violet accent: focus edge, playing state, selected control.",
+  "settings.outline.label": "Outline",
+  "settings.outline.description": "Silver hairline color for card borders and separators."
+}

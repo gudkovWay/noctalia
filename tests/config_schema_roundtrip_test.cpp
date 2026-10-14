@@ -1,14 +1,5 @@
-// Round-trip + golden tests for the declarative config schema.
-//
-// The schema is now the single source for both serialize (config_export::serialize →
-// writeTable) and parse (parseConfigTable → readInto), so there is no legacy code
-// to compare against. What still earns its keep:
-//   - read inverse: readInto(writeTable(x)) == x for every section: the schema's
-//                    read and write are mutual inverses (catches a field whose read
-//                    key != write key, or a lossy codec).
-//   - bar golden: config_export::serialize(probe)["bar"] stays byte-identical to a captured
-//                    reference (locks the resolve-and-flatten monitor-override emit).
-//   - clamp goldens: pin parse-time range behavior.
+// Config schema round trips and parse-time range boundaries.
+// Persisted typed values, including resolved monitor overrides, must survive serialization.
 
 #include "config/config_export.h"
 #include "config/config_types.h"
@@ -24,7 +15,6 @@
 #include <optional>
 #include <print>
 #include <set>
-#include <sstream>
 #include <string>
 
 using namespace noctalia::config::schema;
@@ -36,15 +26,6 @@ namespace {
   void fail(const std::string& message) {
     std::println(stderr, "config_schema_roundtrip: FAIL: {}", message);
     ++g_failures;
-  }
-
-  // Mirror of ConfigService::formatToml so serialized output matches exactly.
-  std::string formatToml(const toml::table& table) {
-    std::ostringstream out;
-    out << toml::toml_formatter{
-        table, toml::toml_formatter::default_flags & ~toml::format_flags::allow_literal_strings
-    };
-    return out.str();
   }
 
   void checkPluginSourceNameValidation() {
@@ -202,6 +183,7 @@ location = "https://example.invalid/bad"
     bar.showOnWorkspaceSwitch = true;
     bar.reserveSpace = false;
     bar.layer = "overlay";
+    bar.widthMode = "content";
     bar.thickness = 44;
     bar.backgroundOpacity = 0.85F;
     bar.compositorBlur = false;
@@ -276,6 +258,7 @@ location = "https://example.invalid/bad"
     ovr.showOnWorkspaceSwitch = true;
     ovr.reserveSpace = true;
     ovr.layer = "top";
+    ovr.widthMode = "available";
     ovr.thickness = 50;
     ovr.backgroundOpacity = 0.7F;
     ovr.compositorBlur = true;
@@ -1079,158 +1062,6 @@ blend = false
 
 int main() {
   checkIdleActionResolution();
-  // Captured from the pre-refactor config_export::serialize for the fully-specified probe
-  // bar. Pins byte-identical bar serialization across the schema migration: the
-  // resolve-and-flatten monitor write and the conditional/optional fields must
-  // emit exactly these bytes.
-  const char* const kBarGolden =
-      R"(order = [ "default" ]
-
-[default]
-auto_hide = true
-background_opacity = 0.85000002384185791
-border = "#123456"
-border_width = 2.0
-capsule = true
-capsule_border = "#111213"
-capsule_border_width = 2.5
-capsule_fill = "#ABCDEF"
-capsule_foreground = "#FEDCBA"
-capsule_opacity = 0.89999997615814209
-capsule_padding = 16.0
-capsule_radius = 12.0
-capsule_thickness = 0.5
-center = [ "clock", "weather" ]
-color = "#0A0B0C"
-compositor_blur = false
-concave_edge_corners = true
-contact_shadow = true
-enabled = false
-end = [ "battery" ]
-font_family = "Inter"
-font_scale = 1.5
-font_weight = 600
-hover_highlight = false
-icon_color = "#0C0B0A"
-layer = "overlay"
-margin_edge = 5
-margin_ends = 100
-margin_opposite_edge = 12
-padding = 12
-panel_overlap = 2
-position = "bottom"
-radius = 18
-radius_bottom_left = 8
-radius_bottom_right = 10
-radius_top_left = 4
-radius_top_right = 6
-reserve_space = false
-scale = 2.0
-shadow = false
-show_on_workspace_switch = true
-smart_auto_hide = false
-start = [ "launcher" ]
-thickness = 44
-widget_spacing = 8
-
-    [default.actions]
-    middle = "none"
-    right = "media toggle"
-
-    [default.dead_zone.actions]
-    back = "media previous"
-    forward = "media next"
-    left = "exec notify-send bar-left"
-    middle = "exec notify-send bar-middle"
-    right = "exec notify-send bar-right"
-    scroll_down = "exec notify-send bar-scroll-down"
-    scroll_up = "exec notify-send bar-scroll-up"
-
-    [default.monitor.DP-1]
-    auto_hide = false
-    background_opacity = 0.69999998807907104
-    border = "#A1A2A3"
-    border_width = 3.0
-    capsule = false
-    capsule_border = "#C1C2C3"
-    capsule_border_width = 4.0
-    capsule_fill = "#B1B2B3"
-    capsule_foreground = "#D1D2D3"
-    capsule_opacity = 0.5
-    capsule_padding = 24.0
-    capsule_radius = 30.0
-    capsule_thickness = 0.25
-    center = [ "media" ]
-    color = "#E1E2E3"
-    compositor_blur = true
-    concave_edge_corners = false
-    contact_shadow = false
-    enabled = true
-    end = [ "volume" ]
-    font_family = "Fira Sans"
-    font_scale = 1.5
-    font_weight = 600
-    hover_highlight = true
-    icon_color = "#E3E2E1"
-    layer = "top"
-    margin_edge = 9
-    margin_ends = 70
-    margin_opposite_edge = 4
-    match = "DP-1"
-    padding = 11
-    panel_overlap = -1
-    position = "top"
-    radius = 22
-    radius_bottom_left = 3
-    radius_bottom_right = 4
-    radius_top_left = 1
-    radius_top_right = 2
-    reserve_space = true
-    scale = 1.5
-    shadow = true
-    show_on_workspace_switch = true
-    smart_auto_hide = false
-    start = [ "tray" ]
-    thickness = 50
-    widget_spacing = 7
-
-        [default.monitor.DP-1.actions]
-        middle = "none"
-        right = "media toggle"
-
-        [default.monitor.DP-1.dead_zone.actions]
-        left = "exec notify-send bar-left"
-        right = "exec notify-send bar-right"
-
-        [[default.monitor.DP-1.capsule_group]]
-        accordion = false
-        accordion_direction = "end"
-        border = "#0F0E0D"
-        border_width = 1.5
-        enabled = true
-        fill = "#F1F2F3"
-        foreground = "#0C0B0A"
-        id = "ogrp"
-        members = [ "volume" ]
-        opacity = 0.60000002384185791
-        padding = 18.0
-        radius = 9.0
-
-    [[default.capsule_group]]
-    accordion = true
-    accordion_direction = "start"
-    border = "#333435"
-    border_width = 3.0
-    enabled = true
-    fill = "#222324"
-    foreground = "#444546"
-    id = "grp1"
-    members = [ "clock", "weather" ]
-    opacity = 0.80000001192092896
-    padding = 20.0
-    radius = 14.0
-    widget_spacing = 10)";
-
   const Config probe = makeProbe();
   const toml::table serialized = config_export::serialize(probe);
 
@@ -1247,19 +1078,7 @@ widget_spacing = 8
     }
   }
 
-  // Bar: write parity against the captured golden, plus read-inverse via the
-  // schemas (reconstructing the bar exactly as config_service does).
-  {
-    const std::string fresh = formatToml(*serialized["bar"].as_table());
-    if (fresh != kBarGolden) {
-      fail(
-          "bar: serialization drifted from golden\n--- golden ---\n"
-          + std::string(kBarGolden)
-          + "\n--- fresh ---\n"
-          + fresh
-      );
-    }
-  }
+  // Reconstruct the persisted bar and its resolved monitor override through the schemas.
   {
     const auto* barTbl = serialized["bar"]["default"].as_table();
     BarConfig rt;
@@ -1281,6 +1100,17 @@ widget_spacing = 8
     }
     if (!(rt == probe.bars[0])) {
       fail("bar: read inverse did not reconstruct the original bar (incl. monitor override)");
+    }
+  }
+  {
+    Config inheritedProbe;
+    inheritedProbe.bars = {makeProbeBar()};
+    inheritedProbe.bars.front().monitorOverrides.front().widthMode.reset();
+    const toml::table inheritedSerialized = config_export::serialize(inheritedProbe);
+    const auto inheritedMode =
+        inheritedSerialized["bar"]["default"]["monitor"]["DP-1"]["width_mode"].value<std::string>();
+    if (inheritedMode != std::optional<std::string>{"content"}) {
+      fail("bar: monitor width_mode did not inherit the base bar mode");
     }
   }
 

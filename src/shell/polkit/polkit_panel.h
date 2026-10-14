@@ -2,6 +2,7 @@
 
 #include "shell/panel/panel.h"
 #include "system/icon_resolver.h"
+#include "ui/controls/scroll_view.h"
 
 #include <functional>
 #include <string_view>
@@ -27,7 +28,7 @@ public:
   void onOpen(std::string_view context) override;
   void onClose() override;
 
-  [[nodiscard]] float preferredWidth() const override { return scaled(480.0F); }
+  [[nodiscard]] float preferredWidth() const override { return scaled(Style::kumihimoEnabled() ? 560.0F : 480.0F); }
   [[nodiscard]] float preferredHeight() const override;
   [[nodiscard]] PanelPlacement panelPlacement() const noexcept override;
   [[nodiscard]] LayerShellLayer layer() const override { return LayerShellLayer::Overlay; }
@@ -51,6 +52,8 @@ private:
   InputArea* m_focusArea = nullptr;
   Label* m_titleLabel = nullptr;
   Label* m_messageLabel = nullptr;
+  ScrollView* m_descriptionScroll = nullptr;
+  ScrollViewState m_descriptionScrollState{};
   Label* m_promptLabel = nullptr;
   Label* m_supplementaryLabel = nullptr;
   Input* m_input = nullptr;

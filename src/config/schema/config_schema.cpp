@@ -2165,6 +2165,24 @@ namespace noctalia::config::schema {
       );
     }
 
+    // width_mode accepts available|content (content sizes the bar main axis to its widgets);
+    // anything else warns.
+    Field<BarConfig> barWidthModeField() {
+      return custom<BarConfig>(
+          "width_mode",
+          [](const toml::table& tbl, BarConfig& out, std::string_view parentPath, Diagnostics& diag) {
+            if (auto v = tbl["width_mode"].value<std::string>()) {
+              if (isValidBarWidthMode(*v)) {
+                out.widthMode = *v;
+              } else {
+                diag.warn(joinPath(parentPath, "width_mode"), "expected available or content, got \"" + *v + "\"");
+              }
+            }
+          },
+          [](toml::table& tbl, const BarConfig& in) { tbl.insert_or_assign("width_mode", in.widthMode); }
+      );
+    }
+
     // radius seeds all four corners; per-corner keys below override it.
     Field<BarConfig> barRadiusField() {
       return custom<BarConfig>(
@@ -2348,6 +2366,7 @@ namespace noctalia::config::schema {
         field(&BarConfig::showOnWorkspaceSwitch, "show_on_workspace_switch"),
         field(&BarConfig::reserveSpace, "reserve_space"),
         barLayerField(),
+        barWidthModeField(),
         field(&BarConfig::thickness, "thickness", kBarThicknessRange),
         field(&BarConfig::backgroundOpacity, "background_opacity", kBarOpacityRange),
         field(&BarConfig::compositorBlur, "compositor_blur"),
@@ -2405,6 +2424,24 @@ namespace noctalia::config::schema {
         optionalBoolField(&BarMonitorOverride::smartAutoHide, "smart_auto_hide"),
         optionalBoolField(&BarMonitorOverride::showOnWorkspaceSwitch, "show_on_workspace_switch"),
         optionalBoolField(&BarMonitorOverride::reserveSpace, "reserve_space"),
+        // width_mode accepts available|content; anything else warns and leaves it unset.
+        custom<BarMonitorOverride>(
+            "width_mode",
+            [](const toml::table& tbl, BarMonitorOverride& out, std::string_view parentPath, Diagnostics& diag) {
+              if (auto v = tbl["width_mode"].value<std::string>()) {
+                if (isValidBarWidthMode(*v)) {
+                  out.widthMode = *v;
+                } else {
+                  diag.warn(joinPath(parentPath, "width_mode"), "expected available or content, got \"" + *v + "\"");
+                }
+              }
+            },
+            [](toml::table& tbl, const BarMonitorOverride& in) {
+              if (in.widthMode.has_value()) {
+                tbl.insert_or_assign("width_mode", *in.widthMode);
+              }
+            }
+        ),
         // layer accepts top|overlay; anything else warns and leaves it unset.
         custom<BarMonitorOverride>(
             "layer",

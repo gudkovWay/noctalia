@@ -818,12 +818,18 @@ std::vector<InputRect> Surface::tessellateShape(
 
   // All-convex with no inset reduces to a plain rounded rect; take the cheap path
   // (corner bands + one middle rect) instead of walking every row. This is the
-  // common case on per-frame blur updates.
+  // common case on per-frame blur updates. Chamfer corners are straight cuts, not
+  // circular arcs, so they cannot use tessellateRoundedRect and take the generic path.
   const bool anyConcave = corners.tl == CornerShape::Concave
       || corners.tr == CornerShape::Concave
       || corners.br == CornerShape::Concave
       || corners.bl == CornerShape::Concave;
+  const bool anyChamfer = corners.tl == CornerShape::Chamfer
+      || corners.tr == CornerShape::Chamfer
+      || corners.br == CornerShape::Chamfer
+      || corners.bl == CornerShape::Chamfer;
   if (!anyConcave
+      && !anyChamfer
       && logicalInset.left <= 0.0F
       && logicalInset.top <= 0.0F
       && logicalInset.right <= 0.0F
@@ -913,7 +919,9 @@ std::vector<InputRect> Surface::tessellateShape(
     float right = bodyMaxX;
     if (rTl > 0.0F && yf < bodyMinY + rTl) {
       const float sy = std::clamp(yf, bodyMinY, bodyMinY + rTl);
-      const float e = extent(rTl, sy - (bodyMinY + rTl));
+      const float dy = sy - bodyMinY;
+      // Chamfer cuts a straight 45-degree edge (inset = r - dy); convex rounds.
+      const float e = corners.tl == CornerShape::Chamfer ? dy : extent(rTl, dy - rTl);
       if (corners.tl == CornerShape::Concave) {
         left = std::min(left, bodyMinX - rTl + e);
       } else {
@@ -922,7 +930,8 @@ std::vector<InputRect> Surface::tessellateShape(
     }
     if (rBl > 0.0F && yf > bodyMaxY - rBl) {
       const float sy = std::clamp(yf, bodyMaxY - rBl, bodyMaxY);
-      const float e = extent(rBl, sy - (bodyMaxY - rBl));
+      const float dy = bodyMaxY - sy;
+      const float e = corners.bl == CornerShape::Chamfer ? dy : extent(rBl, dy - rBl);
       if (corners.bl == CornerShape::Concave) {
         left = std::min(left, bodyMinX - rBl + e);
       } else {
@@ -931,7 +940,8 @@ std::vector<InputRect> Surface::tessellateShape(
     }
     if (rTr > 0.0F && yf < bodyMinY + rTr) {
       const float sy = std::clamp(yf, bodyMinY, bodyMinY + rTr);
-      const float e = extent(rTr, sy - (bodyMinY + rTr));
+      const float dy = sy - bodyMinY;
+      const float e = corners.tr == CornerShape::Chamfer ? dy : extent(rTr, dy - rTr);
       if (corners.tr == CornerShape::Concave) {
         right = std::max(right, bodyMaxX + rTr - e);
       } else {
@@ -940,7 +950,8 @@ std::vector<InputRect> Surface::tessellateShape(
     }
     if (rBr > 0.0F && yf > bodyMaxY - rBr) {
       const float sy = std::clamp(yf, bodyMaxY - rBr, bodyMaxY);
-      const float e = extent(rBr, sy - (bodyMaxY - rBr));
+      const float dy = bodyMaxY - sy;
+      const float e = corners.br == CornerShape::Chamfer ? dy : extent(rBr, dy - rBr);
       if (corners.br == CornerShape::Concave) {
         right = std::max(right, bodyMaxX + rBr - e);
       } else {
@@ -996,7 +1007,8 @@ std::vector<InputRect> Surface::tessellateShape(
 }
 
 std::vector<InputRect> Surface::tessellateRotatedRoundedRect(
-    float centerX, float centerY, float width, float height, float radius, float rotationRad, int stripPx
+    float centerX, float centerY, float width, float height, float radius, float rotationRad, bool chamfered,
+    int stripPx
 ) {
   constexpr float kRotationEpsilon = 0.001F;
   if (std::abs(rotationRad) < kRotationEpsilon) {
@@ -1004,6 +1016,15 @@ std::vector<InputRect> Surface::tessellateRotatedRoundedRect(
     const int iy = static_cast<int>(std::lround(centerY - height * 0.5F));
     const int iw = static_cast<int>(std::lround(width));
     const int ih = static_cast<int>(std::lround(height));
+    if (chamfered) {
+      const CornerShapes corners{
+          .tl = CornerShape::Chamfer,
+          .tr = CornerShape::Chamfer,
+          .br = CornerShape::Chamfer,
+          .bl = CornerShape::Chamfer,
+      };
+      return tessellateShape(ix, iy, iw, ih, corners, RectInsets{}, Radii(radius), stripPx);
+    }
     return tessellateRoundedRect(ix, iy, iw, ih, radius, stripPx);
   }
 
@@ -1021,9 +1042,12 @@ std::vector<InputRect> Surface::tessellateRotatedRoundedRect(
 
   // Corner inset in local space: how far the rounded corner narrows the rect
   // at a given distance from the edge.
-  const auto cornerInset = [](float cr, float distFromEdge) -> float {
+  const auto cornerInset = [chamfered](float cr, float distFromEdge) -> float {
     if (cr <= 0.0F || distFromEdge >= cr) {
       return 0.0F;
+    }
+    if (chamfered) {
+      return cr - distFromEdge;
     }
     const float dy = cr - distFromEdge;
     return cr - std::sqrt(std::max(0.0F, cr * cr - dy * dy));

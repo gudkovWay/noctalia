@@ -14,6 +14,8 @@
 
 class ContextMenuPopup;
 class Flex;
+class Glyph;
+class Image;
 class Input;
 class Label;
 class LauncherResultAdapter;
@@ -82,6 +84,15 @@ private:
   bool handleKeyEvent(std::uint32_t sym, std::uint32_t modifiers);
   void applyEmptyState();
   void bindDetailResult();
+  // Stagecraft skin presentation: hero card for the selected result plus the
+  // compact native result list. Inert unless the q/skin-runtime plugin declares
+  // the "stagecraft" family.
+  [[nodiscard]] bool stagecraftLauncherActive() const;
+  void bindHeroResult();
+  void refreshHeroIcon(Renderer& renderer);
+  // Exactly one hero icon node is visible and participates in layout: the loaded
+  // image when ready, otherwise the fallback glyph; also marks layout dirty.
+  void applyHeroIconVisibility(bool imageReady);
   [[nodiscard]] bool shouldUseDetailPresentation() const;
   [[nodiscard]] bool startsWithLauncherPrefix(std::string_view text) const;
   void applyProviderConfig(LauncherProvider& provider) const;
@@ -117,6 +128,15 @@ private:
   Label* m_detailSubtitle = nullptr;
   Label* m_detailBody = nullptr;
   Label* m_emptyLabel = nullptr;
+  // Stagecraft hero presentation nodes (null unless built in create()).
+  InputArea* m_heroArea = nullptr;
+  Flex* m_heroCard = nullptr;
+  Image* m_heroImage = nullptr;
+  Glyph* m_heroGlyph = nullptr;
+  Label* m_heroTitle = nullptr;
+  Label* m_heroSubtitle = nullptr;
+  std::string m_heroIconPath;
+  int m_heroIconTargetSize = 0;
   bool m_anyProviderLoading = false;
   std::unique_ptr<LauncherResultAdapter> m_listAdapter;
   std::unique_ptr<LauncherAppGridAdapter> m_gridAdapter;

@@ -64,6 +64,7 @@ Stepper::Stepper() {
   setFill(colorSpecFromRole(ColorRole::SurfaceVariant, m_surfaceOpacity));
   clearBorder();
   setRadius(Style::scaledRadiusMd());
+  setPresentationChrome(true);
 
   auto makeStepButton = [this](bool increment) -> std::unique_ptr<Button> {
     auto btn = std::make_unique<Button>();
@@ -423,6 +424,7 @@ void Stepper::refreshSegmentStyle() {
   setFill(colorSpecFromRole(ColorRole::SurfaceVariant, m_surfaceOpacity));
   clearBorder();
   setRadius(r);
+  setPresentationChrome(true);
   if (m_decrement != nullptr) {
     m_decrement->setVariant(ButtonVariant::Tab);
     m_decrement->setRadii({r, 0.0F, 0.0F, r});

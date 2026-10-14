@@ -751,6 +751,37 @@ void Application::initIpc() {
       },
       IpcService::HandlerOptions{.actionEditorVisibility = IpcService::ActionEditorVisibility::Hidden}
   );
+  m_ipcService.bind(
+      noctalia::cli::msg::skinStatus,
+      [this](const std::string& args) -> std::string {
+        if (!noctalia::ipc::splitWords(args).empty()) {
+          return "error: skin-status takes no arguments\n";
+        }
+        return m_skinService.statusJson();
+      },
+      IpcService::HandlerOptions{.actionEditorVisibility = IpcService::ActionEditorVisibility::Hidden}
+  );
+  m_ipcService.bind(
+      noctalia::cli::msg::skinApply,
+      [this](const std::string& args) -> std::string {
+        const std::string recipe = StringUtils::trim(args);
+        if (recipe.empty()) {
+          return "{\"ok\":false,\"error\":\"skin-apply requires a JSON recipe\"}\n";
+        }
+        return m_skinService.applyJson(recipe);
+      },
+      IpcService::HandlerOptions{.actionEditorVisibility = IpcService::ActionEditorVisibility::Hidden}
+  );
+  m_ipcService.bind(
+      noctalia::cli::msg::skinClear,
+      [this](const std::string& args) -> std::string {
+        if (!noctalia::ipc::splitWords(args).empty()) {
+          return "error: skin-clear takes no arguments\n";
+        }
+        return m_skinService.clearJson();
+      },
+      IpcService::HandlerOptions{.actionEditorVisibility = IpcService::ActionEditorVisibility::Hidden}
+  );
   m_bar.registerIpc(m_ipcService);
   m_desktopWidgetsController.registerIpc(m_ipcService);
   m_lockscreenWidgetsController.registerIpc(m_ipcService);

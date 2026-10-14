@@ -27,10 +27,26 @@ public:
   void clearBorder();
   void setRadius(float radius);
   void setRadii(const Radii& radii);
+  // An explicit shape is authoritative: it disables presentation-chrome tracking
+  // (see setPresentationChrome), so the corners stay exactly as passed.
   void setCornerShapes(const CornerShapes& corners);
   void setLogicalInset(const RectInsets& inset);
   void setSoftness(float softness);
   void setNoAa(bool noAa);
+
+  // Draw the presentation-profile silhouette. While the Stagecraft profile is
+  // active the corners become 45-degree chamfer cuts sized by the remembered
+  // normal radius, and the remembered normal corner shape is restored when the
+  // profile clears. The card/panel/dialog presets enable this; an explicit
+  // setStyle()/setCornerShapes() stays authoritative and disables it.
+  void setPresentationChrome(bool enabled);
+
+  // Explicit structural material. Stagecraft draws the structural relief frame;
+  // None is the plain fill/border rect. An explicit call is authoritative and
+  // wins over the presentation-chrome preset's automatic value; resetMaterial()
+  // clears it back to the preset/None state.
+  void setMaterial(RectMaterial material);
+  void resetMaterial();
 
   // Presets
   void setFlatStyle();
@@ -48,6 +64,13 @@ public:
 private:
   void applyPalette();
   void syncStyle();
+  // Used by the card/panel/dialog presets: the preset owns the silhouette, and
+  // `normal` is the shape to restore once the presentation profile clears.
+  void enablePresentationChrome(const CornerShapes& normal);
+  // The shape a preset must remember as "normal": an already-tracked normal wins,
+  // otherwise the corners configured before the preset ran. Never the currently
+  // displayed corners, which the active profile may have turned into chamfers.
+  [[nodiscard]] CornerShapes presentationNormalShapes() const noexcept;
 
   RectNode* m_rect = nullptr;
   RoundedRectStyle m_style;
@@ -57,4 +80,9 @@ private:
   bool m_resolveFill = true;
   bool m_resolveBorder = true;
   Signal<>::ScopedConnection m_paletteConn;
+  bool m_presentationChrome = false;
+  bool m_presentationNormalCaptured = false;
+  CornerShapes m_presentationNormal{};
+  bool m_materialExplicit = false;
+  RectMaterial m_material = RectMaterial::None;
 };

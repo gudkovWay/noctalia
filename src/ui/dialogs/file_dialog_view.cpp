@@ -263,6 +263,7 @@ void FileDialogView::create() {
         card.setFill(colorSpecFromRole(ColorRole::SurfaceVariant));
         card.setBorder(colorSpecFromRole(ColorRole::Outline), Style::borderWidth);
         card.setRadius(Style::scaledRadiusXl(scale));
+        card.setPresentationChrome(true);
         card.setPadding(Style::cardPadding * scale);
         card.setClipChildren(true);
       },

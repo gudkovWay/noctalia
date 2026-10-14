@@ -120,7 +120,9 @@ namespace shell::dock {
       }
     }
 
-    const bool needsSceneBuild = instance.sceneRoot == nullptr
+    const bool stagecraftChanged = Style::stagecraftEnabled() != instance.appliedStagecraft;
+    const bool needsSceneBuild = stagecraftChanged
+        || instance.sceneRoot == nullptr
         || static_cast<std::uint32_t>(std::round(instance.sceneRoot->width())) != width
         || static_cast<std::uint32_t>(std::round(instance.sceneRoot->height())) != height;
     if (needsSceneBuild || needsLayout || needsModelRebuild) {
@@ -402,9 +404,16 @@ namespace shell::dock {
 
     applyDockCompositorBlur(instance, cfg);
 
-    // Palette reactivity.
-    instance.paletteConn = paletteChanged().connect([inst = &instance] {
-      applyPanelPalette(*inst, inst->config);
+    // A material toggle also changes the surface insets; keep the per-output config.
+    instance.appliedStagecraft = Style::stagecraftEnabled();
+    instance.paletteConn = paletteChanged().connect([inst = &instance, &config = deps.config] {
+      const auto& instanceConfig = inst->config;
+      if (Style::stagecraftEnabled() != inst->appliedStagecraft) {
+        resizeSurface(*inst, instanceConfig, config.config().shell.shadow);
+        if (inst->surface)
+          inst->surface->requestLayout();
+      }
+      applyPanelPalette(*inst, instanceConfig);
       if (inst->surface)
         inst->surface->requestRedraw();
     });
@@ -420,6 +429,7 @@ namespace shell::dock {
     const float opacity = cfg.backgroundOpacity;
     instance.panel->setFill(colorSpecFromRole(ColorRole::Surface, opacity));
     instance.panel->setBorder(cfg.border, cfg.borderWidth);
+    instance.panel->setMaterial(Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None);
   }
 
   void resizeSurface(DockInstance& instance, const DockConfig& cfg, const ShellConfig::ShadowConfig& shadowConfig) {

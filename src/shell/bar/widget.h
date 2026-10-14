@@ -65,6 +65,9 @@ public:
   // Widgets with interactive sub-items (workspaces, taskbar, tray) manage hover per item and
   // opt out of the bar's generic whole-widget hover highlight.
   [[nodiscard]] virtual bool wantsBarHoverHighlight() const noexcept { return !m_nonInteractive; }
+  [[nodiscard]] virtual bool isBarSurface() const noexcept { return false; }
+  [[nodiscard]] virtual float barSurfaceInset() const noexcept { return 0.0F; }
+  virtual void setBarGeometry(float, float, float, float) {}
 
   // The node this widget built. Widgets size and position it in doLayout().
   [[nodiscard]] Node* root() const noexcept { return m_innerRoot; }

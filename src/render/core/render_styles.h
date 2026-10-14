@@ -19,6 +19,8 @@ enum class GradientDirection {
 enum class CornerShape {
   Convex,
   Concave,
+  // 45-degree corner cut. `Radii` carries the cut size instead of a round radius.
+  Chamfer,
 };
 
 struct CornerShapes {
@@ -83,6 +85,17 @@ constexpr bool operator==(const ImageScrim& lhs, const ImageScrim& rhs) noexcept
   return lhs.enabled == rhs.enabled && lhs.direction == rhs.direction && lhs.stops == rhs.stops;
 }
 
+// Explicit structural surface mode. None is the plain fill/border rect every
+// existing caller gets. Stagecraft selects the structural relief frame drawn in
+// one rect pass (continuous bevel/recess band plus bounded asymmetric corner
+// supports). It is never inferred from the presence of a border: only a caller
+// that asks for it gets the material.
+enum class RectMaterial : std::uint8_t {
+  None,
+  Stagecraft,
+  Kumihimo,
+};
+
 struct RoundedRectStyle {
   Color fill{};
   Color border{};
@@ -107,6 +120,7 @@ struct RoundedRectStyle {
   CornerShapes shadowExclusionCorners{};
   RectInsets shadowExclusionLogicalInset{};
   Radii shadowExclusionRadius;
+  RectMaterial material = RectMaterial::None;
 };
 
 constexpr bool operator==(const RoundedRectStyle& lhs, const RoundedRectStyle& rhs) noexcept {
@@ -132,7 +146,8 @@ constexpr bool operator==(const RoundedRectStyle& lhs, const RoundedRectStyle& r
       && lhs.shadowExclusionHeight == rhs.shadowExclusionHeight
       && lhs.shadowExclusionCorners == rhs.shadowExclusionCorners
       && lhs.shadowExclusionLogicalInset == rhs.shadowExclusionLogicalInset
-      && lhs.shadowExclusionRadius == rhs.shadowExclusionRadius;
+      && lhs.shadowExclusionRadius == rhs.shadowExclusionRadius
+      && lhs.material == rhs.material;
 }
 
 struct SpinnerStyle {

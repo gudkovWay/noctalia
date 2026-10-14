@@ -21,6 +21,9 @@ void Box::setStyle(const RoundedRectStyle& style) {
   m_resolveFill = false;
   m_resolveBorder = false;
   m_borderWidth = style.borderWidth;
+  // An explicit full style owns the silhouette; stop tracking the profile.
+  m_presentationChrome = false;
+  m_presentationNormalCaptured = false;
   syncStyle();
 }
 
@@ -59,8 +62,46 @@ void Box::setRadii(const Radii& radii) {
 }
 
 void Box::setCornerShapes(const CornerShapes& corners) {
+  // Explicit shapes stay authoritative; the profile no longer overrides them.
+  m_presentationChrome = false;
+  m_presentationNormalCaptured = false;
   m_style.corners = corners;
   syncStyle();
+}
+
+void Box::setPresentationChrome(bool enabled) {
+  if (m_presentationChrome == enabled) {
+    return;
+  }
+  m_presentationChrome = enabled;
+  if (enabled && !m_presentationNormalCaptured) {
+    m_presentationNormal = m_style.corners;
+    m_presentationNormalCaptured = true;
+  }
+  applyPalette();
+}
+
+void Box::setMaterial(RectMaterial material) {
+  m_materialExplicit = true;
+  m_material = material;
+  applyPalette();
+}
+
+void Box::resetMaterial() {
+  m_materialExplicit = false;
+  m_material = RectMaterial::None;
+  applyPalette();
+}
+
+void Box::enablePresentationChrome(const CornerShapes& normal) {
+  m_presentationNormal = normal;
+  m_presentationNormalCaptured = true;
+  m_presentationChrome = true;
+  applyPalette();
+}
+
+CornerShapes Box::presentationNormalShapes() const noexcept {
+  return m_presentationNormalCaptured ? m_presentationNormal : m_style.corners;
 }
 
 void Box::setLogicalInset(const RectInsets& inset) {
@@ -97,6 +138,12 @@ void Box::applyPalette() {
     m_style.border = resolveColorSpec(m_border);
     m_style.borderWidth = m_borderWidth;
   }
+  if (m_presentationNormalCaptured) {
+    m_style.corners = m_presentationChrome ? Style::presentationCorners(m_presentationNormal) : m_presentationNormal;
+  }
+  m_style.material = m_materialExplicit
+      ? m_material
+      : (m_presentationChrome && Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None);
   syncStyle();
 }
 
@@ -114,6 +161,11 @@ void Box::setFlatStyle() {
   m_style.logicalInset = {};
   m_style.radius = 0;
   m_style.softness = 0;
+  m_style.material = RectMaterial::None;
+  m_presentationChrome = false;
+  m_presentationNormalCaptured = false;
+  m_materialExplicit = false;
+  m_material = RectMaterial::None;
   syncStyle();
 }
 
@@ -134,21 +186,25 @@ void Box::setPanelStyle(bool showBorder) {
   m_style.fillMode = FillMode::Solid;
   m_style.corners = {};
   m_style.logicalInset = {};
-  m_style.radius = Style::scaledRadiusXl();
+  m_style.radius = Style::kumihimoEnabled() ? Style::scaledRadius(10.0F) : Style::scaledRadiusXl();
   m_style.softness = 1.0F;
-  syncStyle();
+  enablePresentationChrome({});
 }
 
 void Box::setDialogStyle() { setPanelStyle(true); }
 
 void Box::setCardStyle(float scale, float fillOpacity, bool showBorder) {
+  // Snapshot before the fill/border calls run applyPalette(), which would display
+  // the active profile's chamfers and, if re-read afterwards, freeze them as normal.
+  const CornerShapes normal = presentationNormalShapes();
   setFill(colorSpecFromRole(ColorRole::SurfaceVariant, fillOpacity));
   if (showBorder) {
-    setBorder(colorSpecFromRole(ColorRole::Outline), Style::borderWidth);
+    setBorder(colorSpecFromRole(ColorRole::Outline, Style::kumihimoEnabled() ? 0.5F : 1.0F), Style::borderWidth);
   } else {
     clearBorder();
   }
-  setRadius(Style::scaledRadiusXl(scale));
+  setRadius(Style::kumihimoEnabled() ? Style::scaledRadiusMd(scale) : Style::scaledRadiusXl(scale));
+  enablePresentationChrome(normal);
 }
 
 void Box::syncStyle() { m_rect->setStyle(m_style); }

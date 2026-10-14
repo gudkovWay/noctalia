@@ -42,6 +42,9 @@ struct PluginPanelOptions {
   // One of scripting::kPanelKeyboardFocusModes.
   std::string keyboardFocus = "on_demand";
   bool persistent = false;
+  // false: undecorated surface (no host backdrop/padding/shadow); the script root
+  // renders its own material. Default true keeps native panel chrome.
+  bool decoration = true;
   // Key chord specs the panel takes over while focused, verbatim from the manifest.
   std::vector<std::string> captureKeys;
   scripting::PluginPanelShellConfig shellConfig;
@@ -61,6 +64,7 @@ public:
   void onOpen(std::string_view context) override;
   void onClose() override;
   void onFrameTick(float deltaMs) override;
+  void setOpeningGeometry(float width, float height, float anchorX, std::string_view edge) override;
   [[nodiscard]] bool isContextActive(std::string_view context) const override;
 
   [[nodiscard]] float preferredWidth() const override { return scaled(m_preferredWidth); }
@@ -71,6 +75,7 @@ public:
   [[nodiscard]] LayerShellKeyboard keyboardMode() const override { return m_keyboardMode; }
   [[nodiscard]] LayerShellLayer layer() const override { return m_layer; }
   [[nodiscard]] bool isPersistent() const noexcept override { return m_persistent; }
+  [[nodiscard]] bool hasDecoration() const override { return m_decoration; }
   [[nodiscard]] PanelPlacement panelPlacement() const noexcept override { return m_shellConfig.placement; }
   [[nodiscard]] std::string panelScreenPosition() const override { return m_shellConfig.position; }
   [[nodiscard]] bool panelOpenNearClick() const override { return m_shellConfig.openNearClick; }
@@ -100,6 +105,7 @@ private:
   [[nodiscard]] std::string resolvePluginPath(const std::string& path) const;
   void releaseCapturedKeys();
   void startScript();
+  void sendOpeningGeometry();
   void startTickTimer();
   void setupScriptWatch();
   void teardownScriptWatch();
@@ -141,6 +147,10 @@ private:
   bool m_open = false;
   std::string m_openContext;
   std::uint64_t m_openGeneration = 0;
+  float m_openWidth = 0.0F;
+  float m_openHeight = 0.0F;
+  float m_openAnchorX = -1.0F;
+  std::string m_openEdge;
   bool m_hasOnIpc = false;
   bool m_hasOnIpcKnown = false;
   float m_preferredWidth;
@@ -151,6 +161,7 @@ private:
   LayerShellKeyboard m_keyboardMode = LayerShellKeyboard::OnDemand;
   LayerShellLayer m_layer = LayerShellLayer::Top;
   bool m_persistent = false;
+  bool m_decoration = true;
   scripting::PluginPanelShellConfig m_shellConfig;
   std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 };

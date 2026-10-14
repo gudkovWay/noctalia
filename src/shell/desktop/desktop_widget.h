@@ -3,6 +3,7 @@
 #include "config/config_types.h"
 #include "render/scene/node.h"
 #include "ui/palette.h"
+#include "ui/style.h"
 
 #include <cmath>
 #include <functional>
@@ -84,6 +85,11 @@ public:
   [[nodiscard]] bool hasVisibleBackground() const noexcept;
   [[nodiscard]] float backgroundRadius() const noexcept {
     return m_bgEnabled ? std::round(m_bgRadius * m_baseScale) : 0.0F;
+  }
+  // True when the visible background card uses the Stagecraft chamfer, so the host
+  // tessellates the blur region with matching straight cuts.
+  [[nodiscard]] bool backgroundChamfered() const noexcept {
+    return m_bgEnabled && hasVisibleBackground() && Style::stagecraftEnabled();
   }
 
   virtual bool applySetting(

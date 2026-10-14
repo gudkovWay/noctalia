@@ -12,9 +12,11 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 class TaskbarWidget;
@@ -51,7 +53,8 @@ namespace noctalia::theme {
 namespace scripting {
   class ScriptApiContext;
 }
-struct PointerEvent;
+class PointerEvent;
+class Renderer;
 struct wl_surface;
 
 class Bar {
@@ -138,6 +141,19 @@ private:
   [[nodiscard]] BarServices services() const;
   void buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t height);
   void prepareFrame(BarInstance& instance, bool needsUpdate, bool needsLayout);
+  // Measures the natural widget content extent and keeps the bar surface main axis
+  // sized to it (width_mode = "content"), bounded by the output extent and the end
+  // margins.
+  void syncBarContentSurfaceSize(
+      BarInstance& instance, Renderer& renderer, float barAreaW, float barAreaH, float padding, bool isVertical
+  );
+  // Lays out every widget of the instance and the bar sections for the given bar area.
+  void
+  layoutBarWidgets(BarInstance& instance, Renderer& renderer, float areaW, float areaH, float padding, bool isVertical);
+  // Measured main-axis surface size for content-width bars, stored on the instance.
+  [[nodiscard]] float barContentMainSize(const BarInstance& instance) const noexcept;
+  // Content main size to feed computeBarSurfaceSpec; nullopt when unavailable.
+  [[nodiscard]] std::optional<float> barContentMainOverride(const BarInstance& instance) const noexcept;
   void updateWidgets(BarInstance& instance);
   void applyBarCompositorBlur(BarInstance& instance) const;
   void syncBarSlideLayerTransform(BarInstance& instance) const;

@@ -442,6 +442,11 @@ void OsdOverlay::ensureSurfaces() {
   if (!m_instances.empty() && std::abs(Style::cornerRadiusScale() - m_lastCornerRadiusScale) > 1.0e-4F) {
     destroySurfaces();
   }
+  // Stagecraft flips change corner *shape* (chamfer vs round), not just scale: rebuild surfaces
+  // so cards, blur and input regions pick up the new silhouette.
+  if (!m_instances.empty() && Style::stagecraftEnabled() != m_lastStagecraft) {
+    destroySurfaces();
+  }
 
   const int marginH = (m_config != nullptr) ? std::max(0, m_config->config().osd.offsetX) : 0;
   const float horizontalInnerPad =
@@ -455,6 +460,7 @@ void OsdOverlay::ensureSurfaces() {
   m_lastShowProgress = showProgress;
   m_lastLayoutScale = layoutScale;
   m_lastCornerRadiusScale = Style::cornerRadiusScale();
+  m_lastStagecraft = Style::stagecraftEnabled();
   m_lastMonitorSelectors = selectedMonitors;
 
   const bool anyConfiguredPresent =
@@ -669,6 +675,7 @@ void OsdOverlay::buildScene(Instance& inst, std::uint32_t width, std::uint32_t h
             box.setFill(colorSpecFromRole(ColorRole::Surface, backgroundOpacity));
             box.setBorder(borderColor, border);
             box.setRadius(osdCardRadius(cw, ch, s));
+            box.setPresentationChrome(true);
             box.setPosition(cardX, cardY);
             box.setZIndex(0);
           },
@@ -817,7 +824,7 @@ void OsdOverlay::updateBlurRegion(Instance& inst) const {
   const int rw = std::max(1, static_cast<int>(std::ceil(inst.background->width())));
   const int rh = std::max(1, static_cast<int>(std::ceil(inst.background->height())));
   const float radius = osdCardRadius(inst.background->width(), inst.background->height(), inst.uiLayoutScale);
-  inst.surface->setBlurRegion(Surface::tessellateRoundedRect(rx, ry, rw, rh, radius));
+  inst.surface->setBlurRegion(Surface::tessellateShape(rx, ry, rw, rh, Style::presentationCorners(), {}, radius));
 }
 
 void OsdOverlay::applyReveal(Instance& inst, float reveal) {

@@ -5,6 +5,7 @@
 #include "render/core/texture_manager.h"
 #include "render/text/font_registry.h"
 #include "render/text/font_weight_catalog.h"
+#include "ui/style.h"
 
 #include <algorithm>
 #include <bit>
@@ -237,13 +238,17 @@ std::size_t CairoTextRenderer::MetricsKeyHash::operator()(const MetricsKey& k) c
 }
 
 bool CairoTextRenderer::FontMetricsKey::operator==(const FontMetricsKey& other) const noexcept {
-  return fontWeight == other.fontWeight && sizeBits == other.sizeBits && scaleBits == other.scaleBits;
+  return fontWeight == other.fontWeight
+      && sizeBits == other.sizeBits
+      && scaleBits == other.scaleBits
+      && kumihimo == other.kumihimo;
 }
 
 std::size_t CairoTextRenderer::FontMetricsKeyHash::operator()(const FontMetricsKey& k) const noexcept {
   std::size_t seed = std::hash<std::uint32_t>{}(k.sizeBits);
   hashCombine(seed, std::hash<std::uint32_t>{}(k.scaleBits));
   hashCombine(seed, std::hash<int>{}(static_cast<int>(k.fontWeight)));
+  hashCombine(seed, std::hash<bool>{}(k.kumihimo));
   return seed;
 }
 
@@ -384,11 +389,15 @@ void CairoTextRenderer::notifyFontConfigChanged() {
 
 void CairoTextRenderer::maybeSyncFontConfig() {
   const std::uint64_t generation = text::fontConfigGeneration();
-  if (generation == m_syncedFontGeneration) {
-    return;
+  const bool kumihimo = Style::kumihimoEnabled();
+  if (generation != m_syncedFontGeneration) {
+    m_syncedFontGeneration = generation;
+    m_syncedKumihimo = kumihimo;
+    notifyFontConfigChanged();
+  } else if (kumihimo != m_syncedKumihimo) {
+    m_syncedKumihimo = kumihimo;
+    clearCaches();
   }
-  m_syncedFontGeneration = generation;
-  notifyFontConfigChanged();
 }
 
 // ── Layout construction ─────────────────────────────────────────────────────
@@ -408,7 +417,8 @@ PangoLayout* CairoTextRenderer::buildLayout(
   if (!fontFamily.empty()) {
     fontFamilyStr.assign(fontFamily);
   }
-  pango_font_description_set_family(desc, fontFamilyStr.empty() ? m_fontFamily.c_str() : fontFamilyStr.c_str());
+  const char* defaultFamily = Style::kumihimoEnabled() ? "Noto Sans" : m_fontFamily.c_str();
+  pango_font_description_set_family(desc, fontFamilyStr.empty() ? defaultFamily : fontFamilyStr.c_str());
   pango_font_description_set_weight(desc, static_cast<PangoWeight>(fontWeight));
   pango_font_description_set_absolute_size(desc, static_cast<double>(rasterSize) * PANGO_SCALE);
   pango_layout_set_font_description(layout, desc);
@@ -555,13 +565,14 @@ CairoTextRenderer::measureFont(float contentScale, float fontSize, FontWeight fo
   cacheKey.sizeBits = sizeKey(fontSize);
   cacheKey.scaleBits = scaleKey(contentScale);
   cacheKey.fontWeight = fontWeight;
+  cacheKey.kumihimo = Style::kumihimoEnabled();
   if (auto it = m_fontMetricsCache.find(cacheKey); it != m_fontMetricsCache.end()) {
     return it->second;
   }
 
   const float rasterSize = std::max(1.0F, fontSize * contentScale);
   PangoFontDescription* desc = pango_font_description_new();
-  pango_font_description_set_family(desc, m_fontFamily.c_str());
+  pango_font_description_set_family(desc, Style::kumihimoEnabled() ? "Noto Sans" : m_fontFamily.c_str());
   pango_font_description_set_weight(desc, static_cast<PangoWeight>(fontWeight));
   pango_font_description_set_absolute_size(desc, static_cast<double>(rasterSize) * PANGO_SCALE);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/core/render_styles.h"
+#include "ui/style.h"
 
 #include <cstdint>
 #include <string_view>
@@ -29,6 +30,12 @@ struct AttachedPanelGeometry {
 namespace attached_panel {
 
   [[nodiscard]] inline CornerShapes cornerShapes(std::string_view barPosition) {
+    // Stagecraft replaces both the rounded away-side corners and the concave bar-side
+    // notch with a uniform 45-degree cut, so the panel silhouette matches the chamfered
+    // bar instead of butting a rounded/notched edge against it.
+    if (Style::stagecraftEnabled()) {
+      return Style::presentationCorners(CornerShapes{});
+    }
     if (barPosition == "bottom") {
       return CornerShapes{
           .tl = CornerShape::Convex,
@@ -63,6 +70,11 @@ namespace attached_panel {
   }
 
   [[nodiscard]] inline RectInsets logicalInset(std::string_view barPosition, float radius) {
+    // Stagecraft chamfers are inward cuts: the panel body is the full visual rect, so
+    // there is no concave overhang and no outward inset.
+    if (Style::stagecraftEnabled()) {
+      return RectInsets{};
+    }
     const bool vertical = (barPosition == "left" || barPosition == "right");
     if (vertical) {
       return RectInsets{

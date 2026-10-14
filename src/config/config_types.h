@@ -63,9 +63,20 @@ struct BarDeadZoneOverride {
   bool operator==(const BarDeadZoneOverride&) const = default;
 };
 
+// Bar main-axis sizing modes. "available" (default) stretches the bar across the
+// output extent left by the end margins, matching the historical behavior.
+// "content" shrinks the bar surface along its main axis to the laid-out widget
+// content, still bounded by the output extent and the end margins.
+inline constexpr std::string_view kBarWidthModeAvailable = "available";
+inline constexpr std::string_view kBarWidthModeContent = "content";
+[[nodiscard]] inline bool isValidBarWidthMode(std::string_view mode) noexcept {
+  return mode == kBarWidthModeAvailable || mode == kBarWidthModeContent;
+}
+
 struct BarMonitorOverride {
   std::string match;
   std::optional<std::string> position;
+  std::optional<std::string> widthMode; // available | content
   std::optional<bool> enabled;
   std::optional<bool> autoHide;
   std::optional<bool> smartAutoHide;
@@ -134,6 +145,7 @@ struct BarConfig {
   std::unordered_map<std::string, std::string> actions;
   std::string name = "default";
   std::string position = "top";
+  std::string widthMode = "available"; // available | content; content sizes the bar to its widgets
   bool enabled = true;
   bool autoHide = false;             // slide out when the pointer leaves; reveal on edge approach
   bool smartAutoHide = false;        // hide while the active workspace has windows; show when it is empty

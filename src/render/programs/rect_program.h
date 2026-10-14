@@ -55,5 +55,6 @@ private:
   GLint m_shadowExclusionCornerShapesLocation = -1;
   GLint m_shadowExclusionLogicalInsetLocation = -1;
   GLint m_shadowExclusionRadiiLocation = -1;
+  GLint m_materialLocation = -1;
   GLint m_transformLocation = -1;
 };

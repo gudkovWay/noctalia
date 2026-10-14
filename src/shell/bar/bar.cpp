@@ -425,6 +425,27 @@ namespace {
   constexpr float kWidgetHoverFillAlpha = 0.1F;
   constexpr float kGroupHoverCrossInset = 2.0F;
 
+  // Stagecraft: bar widget capsules/hover pills are chamfered octagons rather than round
+  // pills. The cut is capped at the standard control radius so narrow capsules stay legible;
+  // circles drawn *inside* widgets (e.g. workspace dots) are unaffected.
+  void applyBarCapsuleShape(Box* box, float radius) {
+    if (box == nullptr) {
+      return;
+    }
+    if (Style::stagecraftEnabled()) {
+      // Fixed logical cut independent of the user corner-radius scale, so the structural
+      // edge survives a user scale of 0; never larger than the capsule's own radius.
+      const float cut = std::min(radius, Style::radiusMd);
+      box->setCornerShapes(Style::presentationCorners(CornerShapes{}));
+      box->setRadii(Radii(cut));
+      return;
+    }
+    // setRadius does not reset a previously chamfered node, so restore the normal
+    // (all-convex) corner shape explicitly before the rounded radius.
+    box->setCornerShapes(CornerShapes{});
+    box->setRadius(radius);
+  }
+
   // Sizes a run's hover overlays after the capsule geometry is final. Single runs (and plain
   // widgets) get one overlay covering the whole shell; group runs get one pill per member so
   // only the hovered member lights up.
@@ -442,7 +463,7 @@ namespace {
       }
       box->setPosition(0.0F, 0.0F);
       box->setSize(shellW, shellH);
-      box->setRadius(capsuleRadius);
+      applyBarCapsuleShape(box, capsuleRadius);
       return;
     }
     const float scale = run.contentScale;
@@ -479,7 +500,7 @@ namespace {
         box->setSize(mainExtent, crossExtent);
       }
       const float pillRadius = std::max(0.0F, std::min(box->width(), box->height()) * 0.5F);
-      box->setRadius(std::min(pillRadius, std::max(0.0F, capsuleRadius - crossInset)));
+      applyBarCapsuleShape(box, std::min(pillRadius, std::max(0.0F, capsuleRadius - crossInset)));
     }
   }
 
@@ -658,8 +679,35 @@ namespace {
     std::int32_t exclusiveZone = 0;
   };
 
-  [[nodiscard]] BarSurfaceSpec
-  computeBarSurfaceSpec(const BarConfig& barConfig, const ShellConfig::ShadowConfig& shadowConfig) {
+  // True when the bar main axis hugs its widget content instead of the available
+  // output extent (width_mode = "content").
+  [[nodiscard]] bool barUsesContentWidth(const BarConfig& cfg) noexcept { return cfg.widthMode == "content"; }
+
+  // Main-axis surface chrome for content-width bars: the insets computeBarVisualGeometry
+  // subtracts from the surface extent along the bar's main axis (end margins clipped by
+  // shadow bleed, plus concave corner insets).
+  [[nodiscard]] float barContentMainChrome(const BarConfig& cfg, const ShellConfig::ShadowConfig& shadowConfig) {
+    const auto sbi = shell::surface_shadow::bleed(cfg.shadow, shadowConfig);
+    const auto concave = barConcaveShape(cfg);
+    const auto mEnds = static_cast<float>(cfg.marginEnds);
+    if (cfg.position == "left" || cfg.position == "right") {
+      const float top =
+          std::min(mEnds, static_cast<float>(sbi.up)) + std::ceil(std::max(0.0F, concave.logicalInset.top));
+      const float bottom =
+          std::min(mEnds, static_cast<float>(sbi.down)) + std::ceil(std::max(0.0F, concave.logicalInset.bottom));
+      return top + bottom;
+    }
+    const float left =
+        std::min(mEnds, static_cast<float>(sbi.left)) + std::ceil(std::max(0.0F, concave.logicalInset.left));
+    const float right =
+        std::min(mEnds, static_cast<float>(sbi.right)) + std::ceil(std::max(0.0F, concave.logicalInset.right));
+    return left + right;
+  }
+
+  [[nodiscard]] BarSurfaceSpec computeBarSurfaceSpec(
+      const BarConfig& barConfig, const ShellConfig::ShadowConfig& shadowConfig,
+      std::optional<float> contentMain = std::nullopt
+  ) {
     const bool vertical = (barConfig.position == "left" || barConfig.position == "right");
     const bool isBottom = barConfig.position == "bottom";
     const bool isRight = barConfig.position == "right";
@@ -679,6 +727,18 @@ namespace {
     const std::int32_t edgeMargin = barEdgeLayerMargin(barConfig, shadowConfig);
 
     BarSurfaceSpec spec;
+    // Content mode: pin the main axis to the measured content extent (already
+    // bounded by the output extent and the end margins by the caller). Without a
+    // measurement the main axis stays 0, i.e. anchored to both ends and filled.
+    if (barUsesContentWidth(barConfig) && contentMain.has_value()) {
+      const float main = std::max(static_cast<float>(barConfig.thickness), *contentMain);
+      const auto size = static_cast<std::uint32_t>(std::ceil(main));
+      if (vertical) {
+        spec.surfaceHeight = size;
+      } else {
+        spec.surfaceWidth = size;
+      }
+    }
     if (!vertical) {
       spec.marginLeft = std::max(0, mEnds - sb.left - insetL);
       spec.marginRight = std::max(0, mEnds - sb.right - insetR);
@@ -729,12 +789,19 @@ namespace {
   }
 
   [[nodiscard]] float barInnerSurfaceExtension(
-      const BarConfig& cfg, const ShellConfig::ShadowConfig& shadow, float surfaceWidth, float surfaceHeight
+      const BarConfig& cfg, const ShellConfig::ShadowConfig& shadow, float surfaceWidth, float surfaceHeight,
+      float contentMainBase = 0.0F
   ) {
     const auto base = computeBarSurfaceSpec(cfg, shadow);
     const bool isVertical = (cfg.position == "left" || cfg.position == "right");
     const float current = isVertical ? surfaceWidth : surfaceHeight;
-    const auto normal = static_cast<float>(isVertical ? base.surfaceWidth : base.surfaceHeight);
+    auto normal = static_cast<float>(isVertical ? base.surfaceWidth : base.surfaceHeight);
+    // Content-width bars: the "normal" main extent is the measured content size,
+    // so a steady-state surface has no inner extension. Before the first
+    // measurement assume none rather than shifting the bar by the full extent.
+    if (barUsesContentWidth(cfg)) {
+      normal = contentMainBase > 0.0F ? contentMainBase : current;
+    }
     return std::max(0.0F, current - normal);
   }
 
@@ -751,6 +818,7 @@ namespace {
         (!a.shadow && !b.shadow) || shell::surface_shadow::sameSurfaceMetrics(previousShadow, nextShadow);
     return a.name == b.name
         && a.position == b.position
+        && a.widthMode == b.widthMode
         && a.enabled == b.enabled
         && a.autoHide == b.autoHide
         && a.smartAutoHide == b.smartAutoHide
@@ -861,10 +929,11 @@ namespace {
     };
   }
 
-  [[nodiscard]] InputRect
-  barContentInputRegion(const BarConfig& cfg, const ShellConfig::ShadowConfig& shadow, int surfW, int surfH) {
+  [[nodiscard]] InputRect barContentInputRegion(
+      const BarConfig& cfg, const ShellConfig::ShadowConfig& shadow, int surfW, int surfH, float contentMainBase = 0.0F
+  ) {
     const float innerSurfaceExtension =
-        barInnerSurfaceExtension(cfg, shadow, static_cast<float>(surfW), static_cast<float>(surfH));
+        barInnerSurfaceExtension(cfg, shadow, static_cast<float>(surfW), static_cast<float>(surfH), contentMainBase);
     const auto barVisual = computeBarVisualGeometry(
         cfg, shadow, static_cast<float>(surfW), static_cast<float>(surfH), innerSurfaceExtension
     );
@@ -892,7 +961,8 @@ namespace {
   }
 
   void applyBarShadowStyle(
-      BarInstance& instance, const ShellConfig::ShadowConfig& shadowConfig, float surfaceWidth, float surfaceHeight
+      BarInstance& instance, const ShellConfig::ShadowConfig& shadowConfig, float surfaceWidth, float surfaceHeight,
+      float contentMainBase = 0.0F
   ) {
     if (instance.shadow == nullptr) {
       return;
@@ -900,7 +970,7 @@ namespace {
 
     const auto concave = barConcaveShape(instance.barConfig);
     const float innerSurfaceExtension =
-        barInnerSurfaceExtension(instance.barConfig, shadowConfig, surfaceWidth, surfaceHeight);
+        barInnerSurfaceExtension(instance.barConfig, shadowConfig, surfaceWidth, surfaceHeight, contentMainBase);
     const auto barVisual =
         computeBarVisualGeometry(instance.barConfig, shadowConfig, surfaceWidth, surfaceHeight, innerSurfaceExtension);
     // Shadow follows the same shape as the background: the body expanded outward by
@@ -1110,7 +1180,7 @@ namespace {
         const Widget* radiusSource = !run.widgets.empty() ? run.widgets.front() : nullptr;
         const float capsuleRadius = radiusSource != nullptr ? radiusSource->resolvedBarCapsuleRadius(shellW, shellH)
                                                             : std::max(0.0F, std::min(shellW, shellH) * 0.5F);
-        bg->setRadius(capsuleRadius);
+        applyBarCapsuleShape(bg, capsuleRadius);
         if (run.container == nullptr) {
           placeCapsuleHoverBoxes(
               run, isVertical, shellW, shellH, contentX, contentY, capsuleRadius, widgetHoverPadding
@@ -1258,6 +1328,34 @@ namespace {
       );
     }
 
+    if (!isVertical) {
+      float inset = 0.0F;
+      const auto surfaceInset = [&inset](const auto& widgets) {
+        for (const auto& widget : widgets)
+          inset = std::max(inset, widget->barSurfaceInset());
+      };
+      surfaceInset(instance.startWidgets);
+      surfaceInset(instance.centerWidgets);
+      surfaceInset(instance.endWidgets);
+      if (inset > 0.0F) {
+        instance.endSection->setPosition(instance.endSection->x() - inset, instance.endSection->y());
+      }
+      instance.endSlot->setClipChildren(inset == 0.0F);
+      const auto layoutSurfaces = [&](auto& widgets) {
+        for (auto& widget : widgets) {
+          if (!widget->isBarSurface())
+            continue;
+          widget->setBarGeometry(
+              barAreaW, barAreaH, instance.startSection->width(), instance.endSection->width() + inset + padding
+          );
+          if (widget->outerNode())
+            widget->outerNode()->setPosition(0.0F, 0.0F);
+        }
+      };
+      layoutSurfaces(instance.startWidgets);
+      layoutSurfaces(instance.centerWidgets);
+      layoutSurfaces(instance.endWidgets);
+    }
     applyBarWidgetHitTargets(instance.startSection, instance.startSlot, isVertical);
     applyBarWidgetHitTargets(instance.startSection, instance.startSlot, isVertical);
     applyBarWidgetHitTargets(instance.centerSection, instance.centerSlot, isVertical);
@@ -1299,7 +1397,7 @@ namespace {
               isVertical ? rootY - pad : rootY + (root->height() - capsuleCross) * 0.5F
           );
           box->setSize(hoverW, hoverH);
-          box->setRadius(widget->resolvedBarCapsuleRadius(hoverW, hoverH));
+          applyBarCapsuleShape(box, widget->resolvedBarCapsuleRadius(hoverW, hoverH));
           if (auto* area = dynamic_cast<InputArea*>(root)) {
             auto outset = area->hitTestOutset();
             if (isVertical) {
@@ -1358,7 +1456,8 @@ namespace {
                 isVertical ? mainStart : rootY + (member.height - capsuleCross) * 0.5F
             );
             box->setSize(hoverW, hoverH);
-            box->setRadius(
+            applyBarCapsuleShape(
+                box,
                 radiusSource != nullptr ? radiusSource->resolvedBarCapsuleRadius(hoverW, hoverH)
                                         : widget->resolvedBarCapsuleRadius(hoverW, hoverH)
             );
@@ -2178,7 +2277,7 @@ void Bar::setAttachedPanelGeometry(
   if (instance->surface != nullptr && instance->surface->width() > 0 && instance->surface->height() > 0) {
     applyBarShadowStyle(
         *instance, m_config->config().shell.shadow, static_cast<float>(instance->surface->width()),
-        static_cast<float>(instance->surface->height())
+        static_cast<float>(instance->surface->height()), barContentMainSize(*instance)
     );
     instance->surface->requestRedraw();
   }
@@ -2769,6 +2868,12 @@ void Bar::attachWidgetsToSections(BarInstance& instance) {
         continue;
       }
 
+      if (!isVertical && widget->isBarSurface()) {
+        widget->setBarCapsuleScene(nullptr, nullptr);
+        instance.surfaceUnderlay->addChild(widget->releaseRoot());
+        ++index;
+        continue;
+      }
       const auto& cap = widget->barCapsuleSpec();
       if (!cap.enabled) {
         addPlainWidget(*widget);
@@ -3023,6 +3128,7 @@ void Bar::rebuildInstanceContents(BarInstance& instance, const BarConfig& newCon
   clearChildren(instance.startSection);
   clearChildren(instance.centerSection);
   clearChildren(instance.endSection);
+  clearChildren(instance.surfaceUnderlay);
   instance.startWidgets.clear();
   instance.centerWidgets.clear();
   instance.endWidgets.clear();
@@ -3082,6 +3188,7 @@ void Bar::applyBackgroundPalette(BarInstance& instance) {
   style.fill = colorForRole(ColorRole::Surface, instance.barConfig.backgroundOpacity);
   style.border = resolveColorSpec(instance.barConfig.border);
   style.borderWidth = instance.barConfig.borderWidth;
+  style.material = Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None;
   instance.bg->setStyle(style);
 }
 
@@ -3103,9 +3210,9 @@ void Bar::syncBarAutoHideInputRegion(BarInstance& instance) const {
     instance.surface->setInputRegion(barAutoHideSurfaceInputRegion(instance.barConfig, surfW, surfH, fullSurface));
     return;
   }
-  instance.surface->setInputRegion(
-      {barContentInputRegion(instance.barConfig, m_config->config().shell.shadow, surfW, surfH)}
-  );
+  instance.surface->setInputRegion({barContentInputRegion(
+      instance.barConfig, m_config->config().shell.shadow, surfW, surfH, barContentMainSize(instance)
+  )});
 }
 
 void Bar::revealAutoHideBar(BarInstance& instance) {
@@ -3252,7 +3359,8 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
   const bool isVertical = (instance.barConfig.position == "left" || instance.barConfig.position == "right");
   const auto concave = barConcaveShape(instance.barConfig);
 
-  const float innerSurfaceExtension = barInnerSurfaceExtension(instance.barConfig, shadowConfig, w, h);
+  const float innerSurfaceExtension =
+      barInnerSurfaceExtension(instance.barConfig, shadowConfig, w, h, barContentMainSize(instance));
   const auto barVisual = computeBarVisualGeometry(instance.barConfig, shadowConfig, w, h, innerSurfaceExtension);
   const float barAreaX = barVisual.x;
   const float barAreaY = barVisual.y;
@@ -3292,9 +3400,13 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
       instance.shadowRight = static_cast<Box*>(instance.shadowRightClip->addChild(ui::box()));
     }
     // Note: shadow is inserted before bar sections so it renders below them (z=-1 is set below).
+    auto surfaceUnderlay = ui::node({});
+    surfaceUnderlay->setClipChildren(true);
+    instance.surfaceUnderlay = instance.slideRoot->addChild(std::move(surfaceUnderlay));
 
     auto contentClip = ui::node({});
     contentClip->setClipChildren(true);
+    contentClip->setHitTestSelf(false);
     instance.contentClip = instance.slideRoot->addChild(std::move(contentClip));
 
     auto hoverUnderlay = ui::node({});
@@ -3305,6 +3417,7 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
     auto makeSlot = [&instance]() {
       auto slot = ui::node({});
       slot->setClipChildren(true);
+      slot->setHitTestSelf(false);
       return instance.contentClip->addChild(std::move(slot));
     };
     instance.startSlot = makeSlot();
@@ -3321,6 +3434,7 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
           }
       );
       section->setMirrorInRtl(false);
+      section->setHitTestSelf(false);
       return section;
     };
 
@@ -3382,6 +3496,7 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
         .radius = concave.radii,
         .softness = 0.0F,
         .borderWidth = instance.barConfig.borderWidth,
+        .material = Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None,
     };
     instance.bg->setStyle(bgStyle);
     // (barAreaX/Y/W/H) is the body; the shader expands outward by logicalInset into
@@ -3393,7 +3508,26 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
     );
   }
 
-  instance.paletteConn = paletteChanged().connect([inst = &instance] {
+  instance.appliedStagecraft = Style::stagecraftEnabled();
+  instance.paletteConn = paletteChanged().connect([this, inst = &instance] {
+    if (Style::stagecraftEnabled() != inst->appliedStagecraft) {
+      // Stagecraft toggled: the bar silhouette and every shape-derived region (bg cut,
+      // shadow, blur region, input region, reserved/auto-hide margins) changed. The
+      // concave insets also feed the layer margins, so refresh the surface spec first,
+      // then rebuild the scene in place.
+      if (inst->surface != nullptr) {
+        const auto spec =
+            computeBarSurfaceSpec(inst->barConfig, m_config->config().shell.shadow, barContentMainOverride(*inst));
+        inst->surface->setMargins(spec.marginTop, spec.marginRight, spec.marginBottom, spec.marginLeft);
+        inst->surface->requestSize(spec.surfaceWidth, spec.surfaceHeight);
+        const auto surfaceWidth = inst->surface->width();
+        const auto surfaceHeight = inst->surface->height();
+        if (surfaceWidth > 0 && surfaceHeight > 0) {
+          buildScene(*inst, surfaceWidth, surfaceHeight);
+        }
+      }
+      return;
+    }
     applyBackgroundPalette(*inst);
     if (inst->surface != nullptr) {
       inst->surface->requestRedraw();
@@ -3403,8 +3537,12 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
     instance.contentClip->setPosition(barAreaX, barAreaY);
     instance.contentClip->setSize(barAreaW, barAreaH);
   }
+  if (instance.surfaceUnderlay != nullptr) {
+    instance.surfaceUnderlay->setPosition(barAreaX, barAreaY);
+    instance.surfaceUnderlay->setSize(barAreaW, barAreaH);
+  }
 
-  applyBarShadowStyle(instance, shadowConfig, w, h);
+  applyBarShadowStyle(instance, shadowConfig, w, h, barContentMainSize(instance));
 
   layoutBarSections(instance, renderer, barAreaW, barAreaH, padding, isVertical);
 
@@ -3448,7 +3586,8 @@ void Bar::updateWidgets(BarInstance& instance) {
   const auto padding = static_cast<float>(instance.barConfig.padding);
   const bool isVertical = (instance.barConfig.position == "left" || instance.barConfig.position == "right");
   const auto& shadowConfig = m_config->config().shell.shadow;
-  const float innerSurfaceExtension = barInnerSurfaceExtension(instance.barConfig, shadowConfig, w, h);
+  const float innerSurfaceExtension =
+      barInnerSurfaceExtension(instance.barConfig, shadowConfig, w, h, barContentMainSize(instance));
   const auto barVisual = computeBarVisualGeometry(instance.barConfig, shadowConfig, w, h, innerSurfaceExtension);
   const float barAreaW = barVisual.width;
   const float barAreaH = barVisual.height;
@@ -3492,24 +3631,108 @@ void Bar::prepareFrame(BarInstance& instance, bool needsUpdate, bool needsLayout
   const auto padding = static_cast<float>(instance.barConfig.padding);
   const bool isVertical = (instance.barConfig.position == "left" || instance.barConfig.position == "right");
   const auto& shadowConfig = m_config->config().shell.shadow;
-  const float innerSurfaceExtension = barInnerSurfaceExtension(instance.barConfig, shadowConfig, w, h);
+  const float innerSurfaceExtension =
+      barInnerSurfaceExtension(instance.barConfig, shadowConfig, w, h, barContentMainSize(instance));
   const auto barVisual = computeBarVisualGeometry(instance.barConfig, shadowConfig, w, h, innerSurfaceExtension);
   const float barAreaW = barVisual.width;
   const float barAreaH = barVisual.height;
 
   {
     UiPhaseScope layoutPhase(UiPhase::Layout);
-    for (auto& widget : instance.startWidgets) {
-      widget->layout(renderer, barAreaW, barAreaH);
+    if (barUsesContentWidth(instance.barConfig)) {
+      syncBarContentSurfaceSize(instance, renderer, barAreaW, barAreaH, padding, isVertical);
     }
-    for (auto& widget : instance.centerWidgets) {
-      widget->layout(renderer, barAreaW, barAreaH);
-    }
-    for (auto& widget : instance.endWidgets) {
-      widget->layout(renderer, barAreaW, barAreaH);
-    }
-    layoutBarSections(instance, renderer, barAreaW, barAreaH, padding, isVertical);
+    layoutBarWidgets(instance, renderer, barAreaW, barAreaH, padding, isVertical);
   }
+}
+
+void Bar::layoutBarWidgets(
+    BarInstance& instance, Renderer& renderer, float areaW, float areaH, float padding, bool isVertical
+) {
+  for (auto& widget : instance.startWidgets) {
+    widget->layout(renderer, areaW, areaH);
+  }
+  for (auto& widget : instance.centerWidgets) {
+    widget->layout(renderer, areaW, areaH);
+  }
+  for (auto& widget : instance.endWidgets) {
+    widget->layout(renderer, areaW, areaH);
+  }
+  layoutBarSections(instance, renderer, areaW, areaH, padding, isVertical);
+}
+
+void Bar::syncBarContentSurfaceSize(
+    BarInstance& instance, Renderer& renderer, float barAreaW, float barAreaH, float padding, bool isVertical
+) {
+  if (instance.surface == nullptr) {
+    return;
+  }
+  if (m_platform == nullptr || instance.output == nullptr) {
+    return;
+  }
+  const auto* output = m_platform->findOutputByWl(instance.output);
+  if (output == nullptr || !output->hasUsableGeometry()) {
+    return;
+  }
+
+  // Available content extent: the output span minus the end margins — the same
+  // bound an "available" bar's content area respects.
+  const auto outputMain =
+      static_cast<float>(isVertical ? output->effectiveLogicalHeight() : output->effectiveLogicalWidth());
+  const float capMain = std::max(0.0F, outputMain - 2.0F * static_cast<float>(instance.barConfig.marginEnds));
+  if (capMain <= 0.0F) {
+    return;
+  }
+
+  // Measure the natural content against the largest area we would ever assign so
+  // shrinking never gets stuck on previously clamped widget sizes.
+  const float maxAreaW = isVertical ? barAreaW : std::max(barAreaW, capMain);
+  const float maxAreaH = isVertical ? std::max(barAreaH, capMain) : barAreaH;
+  layoutBarWidgets(instance, renderer, maxAreaW, maxAreaH, padding, isVertical);
+
+  const float startNatural = isVertical ? instance.startSection->height() : instance.startSection->width();
+  const float centerNatural = isVertical ? instance.centerSection->height() : instance.centerSection->width();
+  const float endNatural = isVertical ? instance.endSection->height() : instance.endSection->width();
+  const bool screenEdgeClick = instance.barConfig.marginEnds == 0 && padding > 0;
+  const float paddingSpan = screenEdgeClick ? 0.0F : padding * 2.0F;
+  const float gap = static_cast<float>(std::max(0, instance.barConfig.widgetSpacing));
+  const float gapSpan = instance.centerWidgets.empty() ? gap : gap * 2.0F;
+  const float desired = std::clamp(startNatural + centerNatural + endNatural + paddingSpan + gapSpan, 0.0F, capMain);
+  // Keep the full requested main extent — content plus surface chrome — within the
+  // output extent, never below the thickness minimum, so a tiny output cannot make
+  // us repeatedly request a size larger than the output.
+  const float surfaceMain = std::min(
+      desired + barContentMainChrome(instance.barConfig, m_config->config().shell.shadow),
+      std::max(static_cast<float>(instance.barConfig.thickness), outputMain)
+  );
+
+  instance.contentMainSize = surfaceMain;
+  // The request clamps the main extent to the thickness minimum; compare that
+  // rounded requested extent with the actual same-axis surface dimension so an
+  // identical request is not repeated every frame.
+  const float requestedMain = std::max(static_cast<float>(instance.barConfig.thickness), surfaceMain);
+  const float currentMain =
+      isVertical ? static_cast<float>(instance.surface->height()) : static_cast<float>(instance.surface->width());
+  if (std::ceil(requestedMain) != std::ceil(currentMain)) {
+    const auto spec = computeBarSurfaceSpec(instance.barConfig, m_config->config().shell.shadow, surfaceMain);
+    instance.surface->setMargins(spec.marginTop, spec.marginRight, spec.marginBottom, spec.marginLeft);
+    instance.surface->requestSize(spec.surfaceWidth, spec.surfaceHeight);
+  }
+}
+
+float Bar::barContentMainSize(const BarInstance& instance) const noexcept {
+  if (!barUsesContentWidth(instance.barConfig)) {
+    return 0.0F;
+  }
+  return instance.contentMainSize;
+}
+
+std::optional<float> Bar::barContentMainOverride(const BarInstance& instance) const noexcept {
+  if (!barUsesContentWidth(instance.barConfig)) {
+    return std::nullopt;
+  }
+  const float stored = barContentMainSize(instance);
+  return stored > 0.0F ? std::optional<float>(stored) : std::nullopt;
 }
 
 bool Bar::onPointerEvent(const PointerEvent& event) {
@@ -3979,7 +4202,8 @@ std::string Bar::setBarAutoHideIpc(std::string_view args) {
       if (inst.surface == nullptr) {
         return;
       }
-      const auto spec = computeBarSurfaceSpec(inst.barConfig, m_config->config().shell.shadow);
+      const auto spec =
+          computeBarSurfaceSpec(inst.barConfig, m_config->config().shell.shadow, barContentMainOverride(inst));
       inst.surface->setMargins(spec.marginTop, spec.marginRight, spec.marginBottom, spec.marginLeft);
       inst.surface->requestSize(spec.surfaceWidth, spec.surfaceHeight);
     };

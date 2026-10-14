@@ -206,6 +206,9 @@ namespace noctalia::cli {
   inline constexpr std::array kMsgSettingsTogglePositionals{
       Positional{"context", {}, {}, false, false, false},
   };
+  inline constexpr std::array kMsgSkinApplyPositionals{
+      Positional{"recipe", "Skin recipe v1 as a JSON object", {}, true, false, false},
+  };
   inline constexpr std::array kMsgTaskbarCyclePositionals{
       Positional{"direction", {}, kMsgTaskbarCycleDirectionChoices, true, false, false},
   };
@@ -688,6 +691,14 @@ namespace noctalia::cli {
         {},
         false
     };
+    inline constexpr Command skinApply{
+        "skin-apply", "Apply a strict skin recipe supplied as a single-line JSON argument",
+        {},           {},
+        {},           kMsgSkinApplyPositionals,
+        {},           false
+    };
+    inline constexpr Command skinClear{"skin-clear", "Remove the applied skin", {}, {}, {}, {}, {}, false};
+    inline constexpr Command skinStatus{"skin-status", "Print skin runtime status as JSON", {}, {}, {}, {}, {}, false};
     inline constexpr Command status{"status", "Print current state as JSON", {}, {}, {}, {}, {}, false};
     inline constexpr Command taskbarCycle{
         "taskbar-cycle",
@@ -917,6 +928,9 @@ namespace noctalia::cli {
       msg::settingsOpenPlugin,
       msg::settingsOpenWidget,
       msg::settingsToggle,
+      msg::skinApply,
+      msg::skinClear,
+      msg::skinStatus,
       msg::status,
       msg::taskbarCycle,
       msg::templatesApply,

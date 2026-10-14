@@ -1,6 +1,7 @@
 #include "shell/launcher/launcher_panel.h"
 
 #include "config/config_service.h"
+#include "config/widget_setting_value.h"
 #include "core/deferred_call.h"
 #include "core/input/key_modifiers.h"
 #include "core/input/key_symbols.h"
@@ -32,6 +33,7 @@
 #include <memory>
 #include <string_view>
 #include <tuple>
+#include <variant>
 
 namespace {
 
@@ -46,6 +48,38 @@ namespace {
   constexpr double kTypedUsageScoreCap = 0.5;
   constexpr std::string_view kProviderOverviewProviderId = "__launcher_provider_overview__";
   constexpr std::string_view kProviderOverviewResultPrefix = "provider:";
+
+  // The q/skin-runtime plugin declares the active skin family via the "family"
+  // plugin setting; only "stagecraft" changes the launcher presentation.
+  constexpr std::string_view kSkinRuntimePluginId = "q/skin-runtime";
+  constexpr std::string_view kSkinRuntimeFamilySetting = "family";
+  constexpr std::string_view kStagecraftSkinFamily = "stagecraft";
+
+  // Returns the active skin family as a view into the plugin settings (empty when
+  // unset). Avoids allocating a std::string on every doLayout/style call; the
+  // unordered_map key lookups copy only their keys, which the map API requires.
+  [[nodiscard]] std::string_view activeSkinFamily(const ConfigService* config) {
+    if (config == nullptr) {
+      return {};
+    }
+    static const std::string kSkinRuntimePluginIdKey{kSkinRuntimePluginId};
+    static const std::string kSkinRuntimeFamilyKey{kSkinRuntimeFamilySetting};
+    const auto& pluginSettings = config->config().plugins.pluginSettings;
+    const auto pluginIt = pluginSettings.find(kSkinRuntimePluginIdKey);
+    if (pluginIt == pluginSettings.end()) {
+      return {};
+    }
+    const auto keyIt = pluginIt->second.find(kSkinRuntimeFamilyKey);
+    if (keyIt == pluginIt->second.end()) {
+      return {};
+    }
+    const auto* family = std::get_if<std::string>(&keyIt->second);
+    return family != nullptr ? std::string_view(*family) : std::string_view{};
+  }
+
+  [[nodiscard]] bool launcherSkinCompactList(const ConfigService* config) {
+    return activeSkinFamily(config) == kStagecraftSkinFamily;
+  }
 
   double usageBoostForScore(double score, int usageCount, bool typedQuery) {
     if (usageCount <= 0) {
@@ -1107,7 +1141,11 @@ void LauncherPanel::create() {
       .flexGrow = 1.0F,
   });
 
-  const LauncherListStyle initialStyle = launcherListStyleFrom(m_config, scale, panelCardOpacity());
+  const LauncherListStyle initialStyle = [&] {
+    LauncherListStyle style = launcherListStyleFrom(m_config, scale, panelCardOpacity());
+    style.compact = style.compact || launcherSkinCompactList(m_config);
+    return style;
+  }();
   m_listAdapter = std::make_unique<LauncherResultAdapter>(initialStyle, m_asyncTextures);
   m_gridAdapter = std::make_unique<LauncherAppGridAdapter>(initialStyle, m_asyncTextures);
   m_listAdapter->setResults(&m_results);
@@ -1133,6 +1171,69 @@ void LauncherPanel::create() {
     reorderPinnedApplication(m_results[sourceIndex].desktopEntryPath, m_results[targetIndex].desktopEntryPath);
   });
 
+  // Stagecraft hero: the selected result presented large above the compact native
+  // list. Hidden entirely unless the q/skin-runtime family is "stagecraft".
+  auto heroArea = ui::inputArea({
+      .out = &m_heroArea,
+      .cursorShape = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER,
+      .visible = false,
+      .participatesInLayout = false,
+      .onClick = [this](const InputArea::PointerData&) { activateSelected(); },
+  });
+  auto heroCard = ui::column({
+      .out = &m_heroCard,
+      .align = FlexAlign::Center,
+      .gap = Style::spaceSm * scale,
+      .paddingV = Style::spaceMd * scale,
+      .paddingH = Style::spaceMd * scale,
+      .fill = colorSpecFromRole(ColorRole::SurfaceVariant, panelCardOpacity()),
+      .radius = Style::radiusLg * scale,
+      .fillWidth = true,
+  });
+  heroCard->addChild(
+      ui::image({
+          .out = &m_heroImage,
+          .visible = false,
+          .participatesInLayout = false,
+      })
+  );
+  heroCard->addChild(
+      ui::glyph({
+          .out = &m_heroGlyph,
+          .glyphSize = Style::fontSizeHeader * 3.0F * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .visible = false,
+          .participatesInLayout = false,
+      })
+  );
+  heroCard->addChild(
+      ui::label({
+          .out = &m_heroTitle,
+          .fontSize = Style::fontSizeHeader * scale,
+          .fontWeight = FontWeight::SemiBold,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .maxLines = 1,
+          .ellipsize = TextEllipsize::End,
+      })
+  );
+  heroCard->addChild(
+      ui::label({
+          .out = &m_heroSubtitle,
+          .fontSize = Style::fontSizeBody * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
+          .maxLines = 2,
+          .ellipsize = TextEllipsize::End,
+      })
+  );
+  heroArea->addChild(std::move(heroCard));
+  m_heroImage->setAsyncReadyCallback([this]() {
+    if (m_heroImage == nullptr || m_heroGlyph == nullptr || !m_heroImage->hasImage()) {
+      return;
+    }
+    applyHeroIconVisibility(true);
+  });
+  body->addChild(std::move(heroArea));
+
   body->addChild(
       ui::virtualGridView({
           .out = &m_grid,
@@ -1149,6 +1250,7 @@ void LauncherPanel::create() {
               [this](std::optional<std::size_t> idx) {
                 if (idx.has_value() && *idx < m_results.size()) {
                   m_selectedIndex = *idx;
+                  bindHeroResult();
                 }
               },
           .configure = [](VirtualGridView& grid) { grid.setFillWidth(true); },
@@ -1221,7 +1323,11 @@ void LauncherPanel::refreshLauncherAppIconColorization() {
   if (m_listAdapter == nullptr || m_gridAdapter == nullptr || m_grid == nullptr) {
     return;
   }
-  const LauncherListStyle style = launcherListStyleFrom(m_config, contentScale(), panelCardOpacity());
+  const LauncherListStyle style = [&] {
+    LauncherListStyle s = launcherListStyleFrom(m_config, contentScale(), panelCardOpacity());
+    s.compact = s.compact || launcherSkinCompactList(m_config);
+    return s;
+  }();
   m_listAdapter->setListStyle(style);
   m_gridAdapter->setListStyle(style);
   m_grid->notifyDataChanged();
@@ -1246,7 +1352,11 @@ void LauncherPanel::syncLauncherViewLayout(Renderer* renderer) {
 
   const bool useGrid = shouldUseAppGrid();
   const float scale = contentScale();
-  const LauncherListStyle style = launcherListStyleFrom(m_config, scale, panelCardOpacity());
+  const LauncherListStyle style = [&] {
+    LauncherListStyle s = launcherListStyleFrom(m_config, scale, panelCardOpacity());
+    s.compact = s.compact || launcherSkinCompactList(m_config);
+    return s;
+  }();
   m_grid->setScale(scale);
   m_listAdapter->setListStyle(style);
   m_gridAdapter->setListStyle(style);
@@ -1325,7 +1435,11 @@ void LauncherPanel::updateLauncherGridMetrics(Renderer& renderer) {
     return;
   }
 
-  const LauncherListStyle style = launcherListStyleFrom(m_config, contentScale(), panelCardOpacity());
+  const LauncherListStyle style = [&] {
+    LauncherListStyle s = launcherListStyleFrom(m_config, contentScale(), panelCardOpacity());
+    s.compact = s.compact || launcherSkinCompactList(m_config);
+    return s;
+  }();
   float cellHeight = launcherRowHeight(renderer, style);
   if (m_usingAppGrid) {
     float wrapWidth = 0.0F;
@@ -1356,6 +1470,9 @@ void LauncherPanel::onPanelCardOpacityChanged(float opacity) {
   if (m_detailScroll != nullptr) {
     m_detailScroll->setCardStyle(contentScale(), opacity);
   }
+  if (m_heroCard != nullptr) {
+    m_heroCard->setFill(colorSpecFromRole(ColorRole::SurfaceVariant, opacity));
+  }
 }
 
 void LauncherPanel::doLayout(Renderer& renderer, float width, float height) {
@@ -1366,6 +1483,7 @@ void LauncherPanel::doLayout(Renderer& renderer, float width, float height) {
   syncLauncherListStyle();
   syncLauncherViewLayout(&renderer);
   updateLauncherGridMetrics(renderer);
+  refreshHeroIcon(renderer);
 
   m_container->setSize(width, height);
   m_container->layout(renderer);
@@ -1448,6 +1566,14 @@ void LauncherPanel::onClose() {
   m_detailSubtitle = nullptr;
   m_detailBody = nullptr;
   m_emptyLabel = nullptr;
+  m_heroArea = nullptr;
+  m_heroCard = nullptr;
+  m_heroImage = nullptr;
+  m_heroGlyph = nullptr;
+  m_heroTitle = nullptr;
+  m_heroSubtitle = nullptr;
+  m_heroIconPath.clear();
+  m_heroIconTargetSize = 0;
   clearReleasedRoot();
 }
 
@@ -1653,9 +1779,11 @@ void LauncherPanel::onInputChanged(const std::string& text) {
     }
   }
 
-  const int iconTargetSize = static_cast<int>(
-      std::round(launcherIconSize(launcherListStyleFrom(m_config, contentScale(), panelCardOpacity())))
-  );
+  const int iconTargetSize = static_cast<int>(std::round([&] {
+    LauncherListStyle style = launcherListStyleFrom(m_config, contentScale(), panelCardOpacity());
+    style.compact = style.compact || launcherSkinCompactList(m_config);
+    return launcherIconSize(style);
+  }()));
   for (auto& result : m_allResults) {
     if (result.iconPath.empty() && !result.iconName.empty()) {
       const std::string& resolved = m_iconResolver.resolve(result.iconName, iconTargetSize);
@@ -1942,6 +2070,7 @@ void LauncherPanel::refreshResults() {
     m_grid->setSelectedIndex(m_selectedIndex);
   }
   bindDetailResult();
+  bindHeroResult();
   applyEmptyState();
 }
 
@@ -1972,6 +2101,92 @@ void LauncherPanel::applyEmptyState() {
 
 bool LauncherPanel::shouldUseDetailPresentation() const {
   return m_results.size() == 1 && isDetailPresentation(m_results.front());
+}
+
+bool LauncherPanel::stagecraftLauncherActive() const { return activeSkinFamily(m_config) == kStagecraftSkinFamily; }
+
+void LauncherPanel::bindHeroResult() {
+  if (m_heroArea == nullptr) {
+    return;
+  }
+  const bool show = stagecraftLauncherActive()
+      && !m_results.empty()
+      && !m_usingAppGrid
+      && !shouldUseDetailPresentation()
+      && m_scopedProviderId.empty();
+  m_heroArea->setVisible(show);
+  m_heroArea->setParticipatesInLayout(show);
+  if (!show) {
+    m_heroIconPath.clear();
+    return;
+  }
+
+  const auto index = std::min(m_selectedIndex, m_results.size() - 1);
+  const LauncherResult& result = m_results[index];
+  m_heroTitle->setText(result.title);
+  m_heroSubtitle->setText(result.subtitle.empty() ? result.origin : result.subtitle);
+
+  const float scale = contentScale();
+  const float heroIconSize = Style::fontSizeHeader * 3.0F * scale;
+  m_heroImage->setVisible(false);
+  m_heroImage->setParticipatesInLayout(false);
+  m_heroGlyph->setVisible(false);
+  m_heroGlyph->setParticipatesInLayout(false);
+  if (!result.iconPath.empty()) {
+    // Actual async load happens in refreshHeroIcon() where a Renderer is available.
+    // Until it lands, the fallback glyph is the single visible participant so the
+    // icon slot keeps a stable size.
+    m_heroIconPath = result.iconPath;
+    m_heroIconTargetSize = static_cast<int>(std::round(heroIconSize));
+    m_heroImage->setSize(heroIconSize, heroIconSize);
+    m_heroGlyph->setGlyph(result.glyphName.empty() ? "app-window" : result.glyphName);
+    m_heroGlyph->setGlyphSize(heroIconSize);
+    m_heroGlyph->setVisible(true);
+    m_heroGlyph->setParticipatesInLayout(true);
+  } else {
+    m_heroIconPath.clear();
+    m_heroGlyph->setGlyph(result.glyphName.empty() ? "app-window" : result.glyphName);
+    m_heroGlyph->setGlyphSize(heroIconSize);
+    m_heroGlyph->setVisible(true);
+    m_heroGlyph->setParticipatesInLayout(true);
+  }
+  if (m_container != nullptr) {
+    m_container->markLayoutDirty();
+  }
+}
+
+void LauncherPanel::applyHeroIconVisibility(bool imageReady) {
+  if (m_heroImage == nullptr || m_heroGlyph == nullptr) {
+    return;
+  }
+  m_heroImage->setVisible(imageReady);
+  m_heroImage->setParticipatesInLayout(imageReady);
+  m_heroGlyph->setVisible(!imageReady);
+  m_heroGlyph->setParticipatesInLayout(!imageReady);
+  if (m_container != nullptr) {
+    m_container->markLayoutDirty();
+  }
+}
+
+void LauncherPanel::refreshHeroIcon(Renderer& renderer) {
+  if (m_heroImage == nullptr || m_heroGlyph == nullptr || m_heroIconPath.empty()) {
+    return;
+  }
+  if (m_heroImage->sourcePath() == m_heroIconPath && m_heroImage->hasImage()) {
+    // Already loaded — rebinding the same icon must not leave it invisible from an
+    // earlier bind; just restore the consistent visibility state.
+    applyHeroIconVisibility(true);
+    return;
+  }
+  m_heroImage->setAppIconColorization(effectiveShellAppIconColorizationTint(m_config->config().shell));
+  const bool ready = m_asyncTextures != nullptr
+      ? m_heroImage->setSourceFileAsync(renderer, *m_asyncTextures, m_heroIconPath, m_heroIconTargetSize, true)
+      : m_heroImage->setSourceFile(renderer, m_heroIconPath, m_heroIconTargetSize, true);
+  if (!ready) {
+    m_heroGlyph->setGlyph("app-window");
+    m_heroGlyph->setGlyphSize(static_cast<float>(m_heroIconTargetSize));
+  }
+  applyHeroIconVisibility(ready);
 }
 
 void LauncherPanel::bindDetailResult() {

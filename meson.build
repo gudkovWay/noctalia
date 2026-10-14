@@ -703,6 +703,7 @@ _noctalia_sources = files(
   'src/wayland/hyprland/focus_grab_service.cpp',
   'src/shell/panel/panel_manager.cpp',
   'src/shell/panel/persistent_panel_host.cpp',
+  'src/shell/skins/skin_service.cpp',
   'src/shell/panel/plugin_panel.cpp',
   'src/shell/polkit/polkit_panel.cpp',
   'src/shell/session/session_action_meta.cpp',
@@ -1142,6 +1143,13 @@ install_subdir('assets',
   exclude_files: ['dev.noctalia.Noctalia.desktop'],
 )
 
+install_subdir('integrations/skin-runtime',
+  install_dir: get_option('datadir') / 'noctalia' / 'assets' / 'plugins',
+)
+install_subdir('integrations/ai-triage',
+  install_dir: get_option('datadir') / 'noctalia' / 'assets' / 'plugins',
+)
+
 install_data(
   'assets/dev.noctalia.Noctalia.desktop',
   install_dir: get_option('datadir') / 'applications',
@@ -1236,6 +1244,8 @@ if build_tests
     'math_provider',
     'monitor_selector',
     'network_display',
+    'music_preview_spectrum',
+    'music_preview_widget',
     'network_manager_security',
     'niri_workspace_backend',
     'notification_dnd',
@@ -1259,6 +1269,8 @@ if build_tests
     'scheme',
     'scrollbar_geometry',
     'secret_store',
+    'skin_music_bar',
+    'polkit_panel_layout',
     'security_primitives',
     'state_store',
     'string_utils',
@@ -1306,6 +1318,12 @@ if build_tests
       test_args = [meson.project_source_root() / 'assets']
     elif test_name == 'i18n_supported_languages'
       test_args = [meson.project_source_root() / 'assets' / 'translations']
+    elif test_name == 'music_preview_spectrum'
+      test_args = [meson.project_source_root() / 'integrations/skin-runtime/shared/music-spectrum.luau']
+    elif test_name == 'skin_music_bar'
+      test_args = [meson.project_source_root() / 'integrations']
+    elif test_name == 'music_preview_widget'
+      test_args = [meson.project_source_root() / 'integrations/skin-runtime']
     endif
     test(test_name, test_exe, args: test_args)
   endforeach

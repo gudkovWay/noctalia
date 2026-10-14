@@ -167,6 +167,9 @@ namespace {
     if (ovr.position) {
       resolved.position = *ovr.position;
     }
+    if (ovr.widthMode) {
+      resolved.widthMode = *ovr.widthMode;
+    }
     if (ovr.enabled) {
       resolved.enabled = *ovr.enabled;
     }
