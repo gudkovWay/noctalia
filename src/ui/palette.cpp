@@ -17,6 +17,12 @@ namespace {
   // on the main thread, so this holds only while setPalette() is main-thread-only.
   std::mutex g_paletteMutex;
 
+  // Latest base palette as handed to setPalette(). `palette` above displays the active
+  // presentation overlay while one is set, otherwise this base.
+  Palette g_basePalette = palette;
+  std::optional<Palette> g_presentationPalette;
+  bool g_presentationActive = false;
+
   std::string normalizedRoleToken(std::string_view token) {
     std::string normalized = StringUtils::trim(token);
     StringUtils::toLowerInPlace(normalized);
@@ -105,7 +111,9 @@ Color resolveColorSpec(const ColorSpec& color) noexcept {
 
 bool isLightPalette() noexcept { return relativeLuminance(palette.surface) > 0.179F; }
 
-bool isResolvedLightTheme() noexcept { return g_resolvedThemeLight; }
+// While a presentation overlay is displayed the underlying resolved light/dark flag is
+// retained but not reported: the overlay runs its own dark-leaning material.
+bool isResolvedLightTheme() noexcept { return !g_presentationActive && g_resolvedThemeLight; }
 
 void setResolvedThemeLight(bool light) noexcept { g_resolvedThemeLight = light; }
 
@@ -117,12 +125,47 @@ Signal<>& paletteChanged() {
 void setPalette(const Palette& p) {
   {
     std::scoped_lock lock(g_paletteMutex);
+    if (g_presentationActive) {
+      // The overlay owns the displayed palette; retain this as the latest base so a
+      // later clear restores it. The base update is invisible, so it emits nothing.
+      if (g_basePalette == p) {
+        return;
+      }
+      g_basePalette = p;
+      return;
+    }
     if (palette == p) {
       return;
     }
+    // Without an overlay the displayed palette is the base, so both stay in sync.
     palette = p;
+    g_basePalette = p;
   }
   paletteChanged().emit();
+}
+
+void setPresentationPalette(const std::optional<Palette>& value) {
+  bool displayChanged = false;
+  {
+    std::scoped_lock lock(g_paletteMutex);
+    g_presentationPalette = value;
+    g_presentationActive = value.has_value();
+    const Palette displayed = g_presentationActive ? *g_presentationPalette : g_basePalette;
+    if (displayed != palette) {
+      palette = displayed;
+      displayChanged = true;
+    }
+  }
+  // Equality no-op: equal displayed palette (including clear when base == overlay)
+  // leaves subscribers and theme/template hooks untouched.
+  if (displayChanged) {
+    paletteChanged().emit();
+  }
+}
+
+Palette basePalette() {
+  std::scoped_lock lock(g_paletteMutex);
+  return g_basePalette;
 }
 
 Color colorForRoleSnapshot(ColorRole role) {

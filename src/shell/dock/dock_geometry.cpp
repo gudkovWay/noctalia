@@ -1,6 +1,7 @@
 #include "shell/dock/dock_geometry.h"
 
 #include "shell/surface/shadow.h"
+#include "ui/style.h"
 #include "wayland/layer_surface.h"
 
 #include <algorithm>
@@ -91,6 +92,17 @@ namespace shell::dock {
         static_cast<float>(cfg.radiusBottomRight),
         static_cast<float>(cfg.radiusBottomLeft),
     };
+
+    // Stagecraft: uniform 45-degree outer cut, no concave edge spikes (zero inset), so
+    // surface sizing, panel placement, blur and input regions all agree on the chamfer.
+    if (Style::stagecraftEnabled()) {
+      constexpr float kStagecraftDockCut = 14.0F;
+      const float cut = std::min(kStagecraftDockCut, static_cast<float>(dockThickness(cfg)) * 0.5F);
+      g.corners = Style::presentationCorners(CornerShapes{});
+      g.radii = Radii{cut, cut, cut, cut};
+      g.logicalInset = RectInsets{};
+      return g;
+    }
 
     if (!cfg.concaveEdgeCorners || cfg.marginEdge > 0) {
       return g;

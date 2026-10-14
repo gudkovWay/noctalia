@@ -372,6 +372,7 @@ void Select::applyVisualState() {
           .fill = triggerBg,
           .border = triggerBorder,
           .fillMode = FillMode::Solid,
+          .corners = Style::presentationCorners(),
           .radius = Style::scaledRadiusMd(),
           .softness = 1.0F,
           .borderWidth = resolvedBorderWidth,

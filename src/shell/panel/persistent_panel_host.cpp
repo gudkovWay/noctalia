@@ -337,12 +337,8 @@ void PersistentPanelHost::buildScene(Instance& instance, std::uint32_t width, st
   const float backgroundOpacity = shell::panel_surface::backgroundOpacity(m_config);
   if (hasDecoration) {
     auto bg = ui::box({});
-    bg->setPanelStyle(m_config->config().shell.panel.borders);
-    bg->setFill(colorSpecFromRole(ColorRole::Surface, backgroundOpacity));
-    if (m_config->config().shell.panel.borders) {
-      bg->setBorder(colorSpecFromRole(ColorRole::Outline, backgroundOpacity), Style::borderWidth);
-    }
     instance.bgNode = static_cast<Box*>(instance.sceneRoot->addChild(std::move(bg)));
+    applyBackgroundStyle(instance);
   }
 
   auto contentWrapper = ui::node({});
@@ -379,6 +375,27 @@ void PersistentPanelHost::buildScene(Instance& instance, std::uint32_t width, st
   if (auto* focusArea = instance.panel->initialFocusArea(); focusArea != nullptr) {
     instance.inputDispatcher.setFocus(focusArea);
   }
+}
+
+void PersistentPanelHost::applyBackgroundStyle(Instance& instance) {
+  if (instance.bgNode == nullptr || m_config == nullptr) {
+    return;
+  }
+  const bool borders = m_config->config().shell.panel.borders;
+  const float opacity = shell::panel_surface::backgroundOpacity(m_config);
+  instance.bgNode->setPanelStyle(borders);
+  instance.bgNode->setFill(colorSpecFromRole(ColorRole::Surface, opacity));
+  if (borders) {
+    instance.bgNode->setBorder(colorSpecFromRole(ColorRole::Outline, opacity), Style::borderWidth);
+  }
+  if (Style::stagecraftEnabled()) {
+    const float radius = Style::scaledRadiusXl(instance.panel != nullptr ? instance.panel->contentScale() : 1.0F);
+    instance.bgNode->setCornerShapes(Style::presentationCorners(CornerShapes{}));
+    instance.bgNode->setLogicalInset(RectInsets{});
+    instance.bgNode->setRadii(Radii{radius, radius, radius, radius});
+  }
+  // Native panel root frame; a plain fill/border rect when Stagecraft is cleared.
+  instance.bgNode->setMaterial(Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None);
 }
 
 void PersistentPanelHost::layoutScene(Instance& instance, std::uint32_t width, std::uint32_t height) {
@@ -424,7 +441,10 @@ void PersistentPanelHost::layoutScene(Instance& instance, std::uint32_t width, s
       instance.shadowNode->setStyle(
           shell::surface_shadow::style(
               shadowConfig, shell::panel_surface::backgroundOpacity(m_config),
-              shell::surface_shadow::Shape{.radius = Radii{radius, radius, radius, radius}}
+              shell::surface_shadow::Shape{
+                  .corners = Style::presentationCorners(CornerShapes{}),
+                  .radius = Radii{radius, radius, radius, radius},
+              }
           )
       );
     }
@@ -617,12 +637,31 @@ void PersistentPanelHost::onConfigReloaded() {
     const float backgroundOpacity = shell::panel_surface::backgroundOpacity(m_config);
     instance->panel->setContentScale(shell::panel_surface::contentScale(m_config));
     instance->panel->setPanelCardOpacity(shell::panel_surface::cardOpacity(m_config, backgroundOpacity));
-    if (instance->bgNode != nullptr) {
-      instance->bgNode->setPanelStyle(m_config->config().shell.panel.borders);
-      instance->bgNode->setFill(colorSpecFromRole(ColorRole::Surface, backgroundOpacity));
-      if (m_config->config().shell.panel.borders) {
-        instance->bgNode->setBorder(colorSpecFromRole(ColorRole::Outline, backgroundOpacity), Style::borderWidth);
-      }
+    applyBackgroundStyle(*instance);
+    if (instance->surface != nullptr) {
+      instance->surface->requestLayout();
+    }
+  }
+}
+
+void PersistentPanelHost::onStagecraftChanged() {
+  if (m_config == nullptr) {
+    return;
+  }
+  for (auto& instance : m_instances) {
+    applyBackgroundStyle(*instance);
+    if (instance->shadowNode != nullptr) {
+      const auto& shadowConfig = m_config->config().shell.shadow;
+      const float radius = Style::scaledRadiusXl(instance->panel != nullptr ? instance->panel->contentScale() : 1.0F);
+      instance->shadowNode->setStyle(
+          shell::surface_shadow::style(
+              shadowConfig, shell::panel_surface::backgroundOpacity(m_config),
+              shell::surface_shadow::Shape{
+                  .corners = Style::presentationCorners(CornerShapes{}),
+                  .radius = Radii{radius, radius, radius, radius},
+              }
+          )
+      );
     }
     if (instance->surface != nullptr) {
       instance->surface->requestLayout();

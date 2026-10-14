@@ -58,6 +58,7 @@
 #include "shell/screen_corners/screen_corners.h"
 #include "shell/session/session_action_runner.h"
 #include "shell/settings/settings_window.h"
+#include "shell/skins/skin_service.h"
 #include "shell/switcher/window_switcher.h"
 #include "shell/tray/tray_menu.h"
 #include "shell/wallpaper/panel/wallpaper_scanner.h"
@@ -338,6 +339,10 @@ private:
   LockscreenWidgetsController m_lockscreenWidgetsController;
   SessionActionRunner m_sessionActionRunner{m_compositorPlatform, m_lockScreen};
   PanelManager m_panelManager;
+  // Validates strict skin recipes, owns their config overrides, and reconciles the
+  // persistent q/skin-runtime:music panel. Declared after m_panelManager: it holds a
+  // reference to it.
+  noctalia::shell::skins::SkinService m_skinService{m_configService, m_panelManager};
   // Owned by m_panelManager; kept raw so plugin launcher providers can be re-applied.
   LauncherPanel* m_launcherPanel = nullptr;
   // Ids of plugin-backed panels currently registered with m_panelManager, so a

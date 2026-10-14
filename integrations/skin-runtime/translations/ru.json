@@ -1,0 +1,37 @@
+{
+  "settings.applied_variant.label": "Применённый вариант",
+  "settings.applied_variant.description": "Идентификатор варианта рецепта, последним применённого родной SkinService; пусто, когда активного профиля нет.",
+  "settings.family.label": "Семейство скина",
+  "settings.family.description": "Семейство рецепта, применяемого родной SkinService. Реализованы Stagecraft и Kumihimo; остальные недоступны до своей волны кода.",
+  "settings.family.option.stagecraft": "Stagecraft",
+  "settings.family.option.cut-stone": "Cut Stone",
+  "settings.family.option.wayfinding-field": "Wayfinding Field",
+  "settings.family.option.adaptive-workbench": "Adaptive Workbench",
+  "settings.family.option.kumihimo": "Kumihimo",
+
+  "settings.density.label": "Плотность",
+  "settings.density.description": "Compact ужимает отступы и размеры контролов; comfortable — обычный ритм Stagecraft.",
+  "settings.density.option.comfortable": "Comfortable",
+  "settings.density.option.compact": "Compact",
+
+  "settings.topology.label": "Топология",
+  "settings.topology.description": "Где живут постоянная музыкальная сцена и панель System. Публикуется вместе с рецептом; родной хост ещё и переносит музыкальную панель. Топология Kumihimo hanging-tags вместо этого владеет прозрачной верхней панелью, а сцены Stagecraft остаются закрытыми.",
+  "settings.topology.option.top-music-side": "Музыка сверху, System сбоку",
+  "settings.topology.option.top-music-bottom": "Музыка сверху, System снизу",
+  "settings.topology.option.desktop-widget-side": "Виджет на столе, System сбоку",
+  "settings.topology.option.compact-rail": "Компактная рейка",
+  "settings.topology.option.hanging-tags": "Подвесные ярлыки",
+
+  "settings.surface.label": "Поверхность",
+  "settings.surface.description": "Основной угольный цвет поверхности материала Stagecraft.",
+  "settings.surface_variant.label": "Вариант поверхности",
+  "settings.surface_variant.description": "Вторичный цвет поверхностей: дорожки, шкалы, внутренние плашки.",
+  "settings.text.label": "Текст",
+  "settings.text.description": "Основной цвет текста на поверхностях Stagecraft.",
+  "settings.muted.label": "Приглушённый текст",
+  "settings.muted.description": "Вторичный цвет текста: подписи, мета и состояния Unknown.",
+  "settings.accent.label": "Акцент",
+  "settings.accent.description": "Сдержанный фиолетовый акцент: кромка фокуса, состояние playing, выбранный контрол.",
+  "settings.outline.label": "Обводка",
+  "settings.outline.description": "Цвет серебристой волосяной линии рамок и разделителей."
+}

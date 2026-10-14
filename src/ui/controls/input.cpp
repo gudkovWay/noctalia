@@ -1535,6 +1535,7 @@ void Input::applyVisualState() {
             .fill = fill,
             .border = border,
             .fillMode = FillMode::Solid,
+            .corners = Style::presentationCorners(),
             .radius = Style::scaledRadius(m_frameRadius, chromeScale),
             .softness = 1.0F,
             .borderWidth = resolvedBorderWidth,

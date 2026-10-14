@@ -166,8 +166,10 @@ void main() {
             result = blendOver(vec4(u_line_color1.rgb * a, a), result);
         }
 
-        float sa = lineCoverage(di, pixStep, normY, 0, halfW) * u_line_color1.a;
-        result = blendOver(vec4(u_line_color1.rgb * sa, sa), result);
+        if (u_line_width > 0.0) {
+            float sa = lineCoverage(di, pixStep, normY, 0, halfW) * u_line_color1.a;
+            result = blendOver(vec4(u_line_color1.rgb * sa, sa), result);
+        }
     }
 
     if (u_count2 >= 4.0) {
@@ -181,8 +183,10 @@ void main() {
             result = blendOver(vec4(u_line_color2.rgb * a, a), result);
         }
 
-        float sa = lineCoverage(di, pixStep, normY, 1, halfW) * u_line_color2.a;
-        result = blendOver(vec4(u_line_color2.rgb * sa, sa), result);
+        if (u_line_width > 0.0) {
+            float sa = lineCoverage(di, pixStep, normY, 1, halfW) * u_line_color2.a;
+            result = blendOver(vec4(u_line_color2.rgb * sa, sa), result);
+        }
     }
 
     if (u_count3 >= 4.0) {
@@ -196,8 +200,10 @@ void main() {
             result = blendOver(vec4(u_line_color3.rgb * a, a), result);
         }
 
-        float sa = lineCoverage(di, pixStep, normY, 2, halfW) * u_line_color3.a;
-        result = blendOver(vec4(u_line_color3.rgb * sa, sa), result);
+        if (u_line_width > 0.0) {
+            float sa = lineCoverage(di, pixStep, normY, 2, halfW) * u_line_color3.a;
+            result = blendOver(vec4(u_line_color3.rgb * sa, sa), result);
+        }
     }
 
     gl_FragColor = result;

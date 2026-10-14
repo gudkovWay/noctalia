@@ -1495,6 +1495,7 @@
         "window-switcher": "Window Switcher"
       },
       "layer": {
+        "bottom": "Bottom",
         "overlay": "Overlay",
         "top": "Top"
       },

@@ -481,7 +481,7 @@ namespace scripting {
             }
             const auto* layer = (*entryTable)["layer"].as_string();
             if (layer == nullptr || !isValidPanelLayer(layer->get())) {
-              error = "panel entry '" + entry.id + R"(': layer must be "top" or "overlay")";
+              error = "panel entry '" + entry.id + R"(': layer must be "bottom", "top" or "overlay")";
               return false;
             }
             entry.panelLayerDefault = layer->get();
@@ -597,9 +597,49 @@ namespace scripting {
               return false;
             }
           }
+          if ((*entryTable)["decoration"]) {
+            const auto* decoration = (*entryTable)["decoration"].as_boolean();
+            if (decoration == nullptr) {
+              error = "panel entry '" + entry.id + "': decoration must be a bool";
+              return false;
+            }
+            entry.panelDecoration = decoration->get();
+          }
           injectStandardPanelShellSettings(entry);
         }
         if (kind == PluginEntryKind::Widget) {
+          if ((*entryTable)["bar_surface"]) {
+            const auto* enabled = (*entryTable)["bar_surface"].as_boolean();
+            if (!enabled) {
+              error = "widget entry '" + entry.id + "': bar_surface must be a bool";
+              return false;
+            }
+            entry.widgetBarSurface = enabled->get();
+          }
+          if ((*entryTable)["bar_surface_inset"]) {
+            const auto* inset = (*entryTable)["bar_surface_inset"].as_integer();
+            if (!inset || inset->get() < 0 || inset->get() > 128) {
+              error = "widget entry '" + entry.id + "': bar_surface_inset must be an integer from 0 to 128";
+              return false;
+            }
+            entry.widgetBarSurfaceInset = static_cast<int>(inset->get());
+          }
+          if ((*entryTable)["audio_spectrum"]) {
+            const auto* enabled = (*entryTable)["audio_spectrum"].as_boolean();
+            if (enabled == nullptr) {
+              error = "widget entry '" + entry.id + "': audio_spectrum must be a bool";
+              return false;
+            }
+            entry.widgetAudioSpectrum = enabled->get();
+          }
+          if ((*entryTable)["audio_spectrum_bands"]) {
+            const auto* bands = (*entryTable)["audio_spectrum_bands"].as_integer();
+            if (bands == nullptr || bands->get() < 1 || bands->get() > 128) {
+              error = "widget entry '" + entry.id + "': audio_spectrum_bands must be an integer from 1 to 128";
+              return false;
+            }
+            entry.widgetAudioSpectrumBands = static_cast<int>(bands->get());
+          }
           if ((*entryTable)["actions"]) {
             if (manifest.pluginApiVersion < kWidgetGestureActionsPluginApiVersion) {
               error = "widget entry '"
@@ -707,12 +747,24 @@ namespace scripting {
   std::unordered_map<std::string, WidgetSettingValue>
   seedEntrySettings(const PluginEntry& entry, const std::unordered_map<std::string, WidgetSettingValue>& overrides) {
     std::unordered_map<std::string, WidgetSettingValue> seeded;
-    seeded.reserve(entry.settings.size());
+    seeded.reserve(
+        entry.settings.size() + entry.widgetAudioSpectrum.has_value() + entry.widgetAudioSpectrumBands.has_value() + 2
+    );
     for (const ManifestField& field : entry.settings) {
       if (const auto it = overrides.find(field.key); it != overrides.end()) {
         seeded.emplace(field.key, it->second);
       } else {
         seeded.emplace(field.key, field.defaultValue());
+      }
+    }
+    if (entry.kind == PluginEntryKind::Widget) {
+      seeded.insert_or_assign("bar_surface", entry.widgetBarSurface);
+      seeded.insert_or_assign("bar_surface_inset", static_cast<std::int64_t>(entry.widgetBarSurfaceInset));
+      if (entry.widgetAudioSpectrum.has_value()) {
+        seeded.try_emplace("audio_spectrum", *entry.widgetAudioSpectrum);
+      }
+      if (entry.widgetAudioSpectrumBands.has_value()) {
+        seeded.try_emplace("audio_spectrum_bands", static_cast<std::int64_t>(*entry.widgetAudioSpectrumBands));
       }
     }
     return seeded;

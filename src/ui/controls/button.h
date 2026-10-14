@@ -37,6 +37,8 @@ public:
     ColorSpec bg;
     ColorSpec border;
     ColorSpec label;
+
+    bool operator==(const ButtonStateColors&) const = default;
   };
 
   struct ButtonPalette {
@@ -46,6 +48,8 @@ public:
     ButtonStateColors pressed;
     ButtonStateColors disabled;
     std::optional<ButtonStateColors> selected;
+
+    bool operator==(const ButtonPalette&) const = default;
   };
 
   Button();
@@ -63,6 +67,12 @@ public:
   void setContentAlign(ButtonContentAlign align);
   void setVariant(ButtonVariant variant);
   void setCustomPalette(ButtonPalette customPalette);
+  // Drop a retained custom palette and fall back to the variant palette.
+  void clearCustomPalette();
+  // Force the presentation-profile silhouette on or off for this button. By
+  // default a button follows the active profile unless a custom palette owns
+  // its look; callers that style their own palette can opt back in here.
+  void setPresentationChrome(bool enabled);
   void setSurfaceOpacity(float opacity);
   void setOnClick(std::function<void()> callback);
   void setOnRightClick(std::function<void()> callback);
@@ -136,6 +146,8 @@ private:
   ButtonVariant m_variant = ButtonVariant::Default;
   ButtonPalette m_palette;
   std::optional<ButtonPalette> m_customPalette;
+  // Unset = automatic (follow the profile unless a custom palette owns the look).
+  std::optional<bool> m_presentationChromeOverride;
   // Animation: snapshot of colors at transition start
   Color m_fromBg{};
   Color m_fromBorder{};

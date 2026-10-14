@@ -62,6 +62,8 @@ public:
   void refreshPanel(std::string_view id);
   void requestAnimationFrame(std::string_view id);
   void onConfigReloaded();
+  // Stagecraft toggle: re-apply each open panel's chamfered background/shadow shape.
+  void onStagecraftChanged();
   void onIconThemeChanged();
   void refresh();
   void setPanelClosedCallback(std::function<void()> callback);
@@ -92,6 +94,10 @@ private:
   };
 
   void buildScene(Instance& instance, std::uint32_t width, std::uint32_t height);
+  // Reset and re-apply the panel background material, including the Stagecraft chamfer
+  // when active. Resetting through setPanelStyle also restores the normal rounded panel
+  // when Stagecraft is cleared.
+  void applyBackgroundStyle(Instance& instance);
   void prepareFrame(Instance& instance, bool needsUpdate, bool needsLayout);
   void layoutScene(Instance& instance, std::uint32_t width, std::uint32_t height);
   [[nodiscard]] Instance* findInstance(std::string_view id) noexcept;

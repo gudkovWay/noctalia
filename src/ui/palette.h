@@ -132,6 +132,18 @@ void setResolvedThemeLight(bool light) noexcept;
 
 void setPalette(const Palette& p);
 
+// Process-only presentation overlay for the active Stagecraft profile. Main-thread only.
+// While a value is set the displayed palette (::palette, colorForRole, resolveColorSpec,
+// colorForRoleSnapshot) resolves to it; setPalette() keeps storing the latest base
+// palette so a following std::nullopt restores it without replaying theme resolution.
+// Emits paletteChanged() only when the displayed palette actually changes, so an
+// overlay update never triggers theme/template/GSettings side effects.
+void setPresentationPalette(const std::optional<Palette>& value);
+
+// Snapshot of the latest base palette, ignoring any active presentation overlay.
+// ThemeService seeds transitions from this so overlay colors never mix into a base fade.
+[[nodiscard]] Palette basePalette();
+
 // Snapshot accessor safe to call from non-main threads (e.g. plugin script workers).
 [[nodiscard]] Color colorForRoleSnapshot(ColorRole role);
 

@@ -11,6 +11,7 @@
 #include "ui/ui_tree.h"
 #include "ui/ui_tree_reconciler.h"
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -59,6 +60,9 @@ public:
   void luaSetUpdateInterval(float ms);
   void setUpdateDeferralCallback(std::function<bool()> callback);
   [[nodiscard]] bool isVertical() const { return m_isVertical; }
+  [[nodiscard]] bool isBarSurface() const noexcept override { return m_barSurface && !m_isVertical; }
+  [[nodiscard]] float barSurfaceInset() const noexcept override { return isBarSurface() ? m_barSurfaceInset : 0.0F; }
+  void setBarGeometry(float width, float height, float startWidth, float endWidth) override;
 
   // PluginIpcEndpoint
   [[nodiscard]] std::string_view ipcEntryId() const override { return m_entryId; }
@@ -164,6 +168,9 @@ private:
   bool m_updateDeferred = false;
   bool m_isVertical = false;
   bool m_enableScroll = true;
+  bool m_barSurface = false;
+  float m_barSurfaceInset = 0.0F;
+  std::array<float, 4> m_barGeometry{};
   bool m_glyphVisible = false;
   bool m_imageWatch = false;
   bool m_imageDirty = false;

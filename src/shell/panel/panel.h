@@ -31,6 +31,14 @@ public:
   virtual void onFrameTick(float deltaMs) { (void)deltaMs; }
   virtual void onOpen(std::string_view context) { (void)context; }
   virtual void onClose() {}
+  // Physical content extent and opener relative to its actual clamped origin.
+  // An empty edge / negative anchor denotes an unattached opening.
+  virtual void setOpeningGeometry(float width, float height, float anchorX, std::string_view edge) {
+    (void)width;
+    (void)height;
+    (void)anchorX;
+    (void)edge;
+  }
   virtual void onIconThemeChanged() {}
   virtual void scrollFocusedInputIntoView(InputArea* area) { (void)area; }
   [[nodiscard]] virtual bool isContextActive(std::string_view context) const {

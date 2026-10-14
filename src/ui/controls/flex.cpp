@@ -219,6 +219,11 @@ void Flex::clearFill() {
 }
 
 void Flex::setRadius(float radius) {
+  // A background-less flex is already square-cornered, so clearing to zero needs
+  // no node; only a non-zero radius (or an existing background) allocates one.
+  if (m_background == nullptr && radius <= 0.0F) {
+    return;
+  }
   ensureBackground();
   auto style = m_background->style();
   style.radius = radius;
@@ -229,6 +234,26 @@ void Flex::setRadii(const Radii& radii) {
   ensureBackground();
   auto style = m_background->style();
   style.radius = radii;
+  m_background->setStyle(style);
+}
+
+void Flex::setCornerShapes(const CornerShapes& corners) {
+  // Explicit shapes stay authoritative; the profile no longer overrides them.
+  m_presentationChrome = false;
+  m_presentationNormalCaptured = false;
+  if (m_background == nullptr) {
+    // A flex with no background is already a plain rectangle, so the default
+    // (all-convex) shapes need no node. Only a non-default shape allocates one.
+    if (corners == CornerShapes{}) {
+      return;
+    }
+    ensureBackground();
+  }
+  auto style = m_background->style();
+  if (style.corners == corners) {
+    return;
+  }
+  style.corners = corners;
   m_background->setStyle(style);
 }
 
@@ -261,7 +286,54 @@ void Flex::applyPalette() {
   style.fill = resolveColorSpec(m_fill);
   style.border = resolveColorSpec(m_border);
   style.fillMode = FillMode::Solid;
+  if (m_presentationNormalCaptured) {
+    style.corners = m_presentationChrome ? Style::presentationCorners(m_presentationNormal) : m_presentationNormal;
+  }
+  style.material = m_materialExplicit
+      ? m_material
+      : (m_presentationChrome && Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None);
   m_background->setStyle(style);
+}
+
+void Flex::setPresentationChrome(bool enabled) {
+  if (m_presentationChrome == enabled) {
+    return;
+  }
+  m_presentationChrome = enabled;
+  if (enabled && !m_presentationNormalCaptured) {
+    m_presentationNormal = m_background != nullptr ? m_background->style().corners : CornerShapes{};
+    m_presentationNormalCaptured = true;
+  }
+  applyPalette();
+}
+
+void Flex::setMaterial(RectMaterial material) {
+  m_materialExplicit = true;
+  m_material = material;
+  ensureBackground();
+  applyPalette();
+}
+
+void Flex::resetMaterial() {
+  m_materialExplicit = false;
+  m_material = RectMaterial::None;
+  if (m_background != nullptr) {
+    applyPalette();
+  }
+}
+
+void Flex::enablePresentationChrome(const CornerShapes& normal) {
+  m_presentationNormal = normal;
+  m_presentationNormalCaptured = true;
+  m_presentationChrome = true;
+  applyPalette();
+}
+
+CornerShapes Flex::presentationNormalShapes() const noexcept {
+  if (m_presentationNormalCaptured) {
+    return m_presentationNormal;
+  }
+  return m_background != nullptr ? m_background->style().corners : CornerShapes{};
 }
 
 void Flex::setSoftness(float softness) {
@@ -272,6 +344,9 @@ void Flex::setSoftness(float softness) {
 }
 
 void Flex::setCardStyle(float scale, float fillOpacity, bool showBorder) {
+  // Snapshot before the fill/border calls run applyPalette(), which would display
+  // the active profile's chamfers and, if re-read afterwards, freeze them as normal.
+  const CornerShapes normal = presentationNormalShapes();
   setFill(colorSpecFromRole(ColorRole::SurfaceVariant, fillOpacity));
   if (showBorder) {
     setBorder(colorSpecFromRole(ColorRole::Outline), Style::borderWidth);
@@ -280,6 +355,7 @@ void Flex::setCardStyle(float scale, float fillOpacity, bool showBorder) {
   }
   setRadius(Style::scaledRadiusXl(scale));
   setPadding(Style::cardPadding * scale);
+  enablePresentationChrome(normal);
 }
 
 void Flex::setMinWidth(float minWidth) {

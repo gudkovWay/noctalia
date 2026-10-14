@@ -4,12 +4,24 @@
 #include "ui/style.h"
 
 #include <functional>
+#include <optional>
 
 class InputArea;
 class RectNode;
 
 class Slider : public Flex {
 public:
+  // Optional caller-supplied role/hex colors. Absent members keep the native
+  // role, so an unset palette behaves exactly like the built-in slider.
+  struct SliderPalette {
+    std::optional<ColorSpec> track;
+    std::optional<ColorSpec> fill;
+    std::optional<ColorSpec> thumb;
+    std::optional<ColorSpec> focus;
+
+    bool operator==(const SliderPalette&) const = default;
+  };
+
   Slider();
 
   void setRange(double minValue, double maxValue);
@@ -20,6 +32,8 @@ public:
   void setThumbSize(float size);
   void setControlHeight(float height);
   void setWheelAdjustEnabled(bool enabled);
+  void setCustomPalette(SliderPalette customPalette);
+  void clearCustomPalette();
   void setOnValueChanged(std::function<void(double)> callback);
   void setOnDragEnd(std::function<void()> callback);
 
@@ -57,4 +71,5 @@ private:
   float m_trackHeight = Style::sliderTrackHeight;
   float m_thumbSizePx = Style::sliderThumbSize;
   float m_controlHeightPx = Style::controlHeight;
+  std::optional<SliderPalette> m_customPalette;
 };

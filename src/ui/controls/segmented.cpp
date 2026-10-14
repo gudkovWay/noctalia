@@ -263,6 +263,7 @@ void Segmented::applyOuterStyle() {
   setFill(colorSpecFromRole(m_surfaceRole, m_surfaceOpacity));
   clearBorder();
   setRadius(Style::scaledRadiusMd(m_scale));
+  setPresentationChrome(true);
 }
 
 void Segmented::doLayout(Renderer& renderer) {

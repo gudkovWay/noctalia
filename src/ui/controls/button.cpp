@@ -481,7 +481,18 @@ void Button::setVariant(ButtonVariant variant) {
 }
 
 void Button::setCustomPalette(ButtonPalette customPalette) {
+  if (m_customPalette.has_value() && *m_customPalette == customPalette) {
+    return;
+  }
   m_customPalette = customPalette;
+  applyVariant();
+}
+
+void Button::clearCustomPalette() {
+  if (!m_customPalette.has_value()) {
+    return;
+  }
+  m_customPalette.reset();
   applyVariant();
 }
 
@@ -494,8 +505,19 @@ void Button::setSurfaceOpacity(float opacity) {
   applyVariant();
 }
 
+void Button::setPresentationChrome(bool enabled) {
+  if (m_presentationChromeOverride.has_value() && *m_presentationChromeOverride == enabled) {
+    return;
+  }
+  m_presentationChromeOverride = enabled;
+  applyVariant();
+}
+
 void Button::applyVariant() {
-  m_palette = m_customPalette.value_or(paletteForVariant(m_variant));
+  m_palette = m_customPalette.has_value() ? *m_customPalette : paletteForVariant(m_variant);
+  // A custom palette owns the button's look, so it keeps its own silhouette;
+  // variant chrome follows the presentation profile.
+  Flex::setPresentationChrome(m_presentationChromeOverride.value_or(!m_customPalette.has_value()));
   if (m_surfaceOpacity < 1.0F) {
     m_palette.normal.bg.alpha *= m_surfaceOpacity;
     m_palette.disabled.bg.alpha *= m_surfaceOpacity;
@@ -607,7 +629,11 @@ float Button::effectiveBorderWidth() const noexcept {
 void Button::resolveVisualStateColors(Color& targetBg, Color& targetBorder, Color& targetLabel) const {
   const bool isKeyboardFocused = m_enabled && m_keyboardFocusHint;
   const bool isInputFocused = m_enabled && m_inputArea != nullptr && m_inputArea->focused();
-  const bool keyboardNavFocus = isKeyboardFocused
+  // A styled (custom-palette) button owns its focus colors: never borrow the
+  // host Secondary accent for keyboard navigation. The hover/selected colors
+  // supplied by the caller carry the local focus state instead.
+  const bool keyboardNavFocus = !m_customPalette.has_value()
+      && isKeyboardFocused
       && (m_variant == ButtonVariant::TabActive
           || m_variant == ButtonVariant::Tab
           || m_variant == ButtonVariant::Ghost);

@@ -133,6 +133,8 @@ public:
   // Lets the renderer skip subtrees entirely outside the active clip.
   void setPaintContained(bool paintContained);
   void setHitTestVisible(bool hitTestVisible);
+  // Skip this node's empty bounds while keeping descendants and clipping active.
+  void setHitTestSelf(bool hitTestSelf) noexcept { m_hitTestSelf = hitTestSelf; }
   void setHitTestOutset(const HitTestOutset& outset);
   void setZIndex(std::int32_t zIndex);
   void setExcludeSubtreeFromTabOrder(bool exclude) noexcept;
@@ -214,6 +216,7 @@ private:
   bool m_paintContained = false;
   bool m_excludeSubtreeFromTabOrder = false;
   bool m_hitTestVisible = true;
+  bool m_hitTestSelf = true;
   HitTestOutset m_hitTestOutset{};
   bool m_sizeAssignedByLayout = false;
   bool m_arranging = false;

@@ -95,10 +95,12 @@
 #include "util/string_utils.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <csignal>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -201,6 +203,27 @@ void Application::run(std::function<void()> startupReadyCallback) {
   initLogFile();
   initLogLevelFromEnvironment();
   kLog.info("noctalia {}", noctalia::build_info::displayVersion());
+  // Skin Lua actions and the Studio resolver pick NOCTALIA_SKIN_BINARY over the
+  // bare command name, so children must see the exact executable that is running
+  // here (the autostart prefix, not a same-named distro binary). Set it for this
+  // process only before any plugin or child starts; an explicit environment
+  // override always wins. A failed /proc/self/exe read is logged, never guessed.
+  if (const char* overridePath = ::getenv("NOCTALIA_SKIN_BINARY"); overridePath != nullptr && *overridePath != '\0') {
+    kLog.info("NOCTALIA_SKIN_BINARY override in effect: {}", overridePath);
+  } else {
+    std::error_code ec;
+    const auto self = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (ec || self.empty()) {
+      kLog.warn("failed to read /proc/self/exe: {} — NOCTALIA_SKIN_BINARY left unset", ec.message());
+    } else {
+      const std::string selfPath = self.string();
+      if (::setenv("NOCTALIA_SKIN_BINARY", selfPath.c_str(), 1) != 0) {
+        kLog.warn("setenv NOCTALIA_SKIN_BINARY failed: {}", std::strerror(errno));
+      } else {
+        kLog.info("NOCTALIA_SKIN_BINARY={}", selfPath);
+      }
+    }
+  }
   // Claim the tray watcher name first. The tray UI itself is wired up later.
   // Item callbacks run from deferred work on the main loop, after the shell
   // is initialized.
@@ -232,6 +255,10 @@ void Application::run(std::function<void()> startupReadyCallback) {
         m_pluginServiceHost.refresh(m_configService.config().plugins.pluginSettings);
         reloadPluginLauncherProviders();
         reloadPluginPanels();
+        // After the plugin panels were re-registered: a Stagecraft skin keeps its
+        // persistent panels open across reloads, and the reconcile never toggles
+        // an already-correct panel.
+        m_skinService.reconcilePersistentPanels();
         m_settingsWindow.onPluginsChanged();
       }
     });
@@ -244,6 +271,8 @@ void Application::run(std::function<void()> startupReadyCallback) {
       m_bar.reload();
       reloadPluginLauncherProviders();
       reloadPluginPanels();
+      // Panels were just re-registered; put the Stagecraft persistent panels back.
+      m_skinService.reconcilePersistentPanels();
       m_settingsWindow.onPluginsChanged();
     });
     // A git-source enable exports on a worker thread; redraw the plugins list so the
@@ -254,7 +283,12 @@ void Application::run(std::function<void()> startupReadyCallback) {
     });
     m_pluginManager.setOnEnabled([this](std::string_view pluginId) { m_pluginServiceHost.enablePlugin(pluginId); });
   });
-  runStartupPhase("initIpc", [this]() { initIpc(); });
+  runStartupPhase("initIpc", [this]() {
+    initIpc();
+    // A skin applied in an earlier session is already in the config; restore its
+    // persistent panels once the main loop runs and outputs have settled.
+    DeferredCall::callLater([this]() { m_skinService.reconcilePersistentPanels(); });
+  });
   runStartupPhase("buildPollSources", [this]() { (void)buildPollSources(); });
 
   runStartupPhase("startup hooks", [this]() {

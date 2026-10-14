@@ -30,6 +30,7 @@ KeybindRecorder::KeybindRecorder() {
   setGap(Style::spaceXs);
   setPadding(Style::spaceXs, Style::spaceSm);
   setRadius(Style::scaledRadiusMd());
+  setPresentationChrome(true);
   setMinHeight(Style::controlHeightSm);
   setMinWidth(kRecorderMinWidth);
 

@@ -325,6 +325,7 @@ void ContextMenuControl::rebuildRows(Renderer& renderer) {
               .height = rowHeight,
           })
       );
+      rowBgPtr->setPresentationChrome(true);
 
       const bool toggleVisible = hasToggle(entry);
       const float toggleSlot = toggleVisible ? kToggleSlot * scale : 0.0F;

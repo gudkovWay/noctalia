@@ -490,7 +490,7 @@ Node* Node::hitTestImpl(Node* node, float px, float py, bool allowOverflow, cons
     }
   }
 
-  return inside ? node : nullptr;
+  return inside && node->m_hitTestSelf ? node : nullptr;
 }
 
 void Node::absolutePosition(const Node* node, float& outX, float& outY) {

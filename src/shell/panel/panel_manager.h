@@ -7,6 +7,7 @@
 #include "shell/panel/panel_click_shield.h"
 #include "shell/panel/persistent_panel_host.h"
 #include "ui/dialogs/layer_popup_host.h"
+#include "ui/signal.h"
 #include "wayland/hyprland/popup_grab_host.h"
 
 #include <cstdint>
@@ -181,6 +182,10 @@ private:
 
   void buildScene(std::uint32_t width, std::uint32_t height);
   void prepareFrame(bool needsUpdate, bool needsLayout);
+  // Palette invalidation: when the Stagecraft toggle flips, arm an in-place scene
+  // rebuild so the panel silhouette, shadow and blur/input regions adopt the new
+  // corner shapes. Plain palette changes are left to the controls' own handlers.
+  void onPaletteChanged();
   void applyPendingPanelFocus();
   void destroyPanel();
   // Called before the panel surface commits so outside-click dismissal is ready
@@ -285,4 +290,9 @@ private:
   ContextMenuPopup* m_activePopup = nullptr;
   std::unique_ptr<SelectDropdownPopup> m_selectPopup;
   std::uint64_t m_destroyGeneration = 0; // invalidates stale deferred destroyPanel calls
+  Signal<>::ScopedConnection m_paletteConn;
+  bool m_appliedStagecraft = false;
+  // Set on a Stagecraft toggle; consumed by prepareFrame to rebuild the scene in place
+  // under a current render context.
+  bool m_pendingStagecraftRebuild = false;
 };

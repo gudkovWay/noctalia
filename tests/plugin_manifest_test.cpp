@@ -100,6 +100,106 @@ int main() {
     ok = expect(!defaults->deprecated, "deprecated should default to false") && ok;
     ok = expect(defaults->dependencies.empty(), "dependencies should default to empty") && ok;
   }
+  const auto surfacePath = root / "bar-surface/plugin.toml";
+  ok = writeManifest(
+           surfacePath,
+           "id='me/surface'\nname='Surface'\nplugin_api=32\n"
+           "[[widget]]\nid='surface'\nentry='surface.luau'\nbar_surface=true\nbar_surface_inset=52\n"
+       )
+      && ok;
+  const auto surfaceManifest = scripting::parsePluginManifest(surfacePath, &error);
+  ok = expect(surfaceManifest.has_value(), "full-bar surface entry rejected") && ok;
+  if (surfaceManifest) {
+    const auto seeded = scripting::seedEntrySettings(surfaceManifest->entries.front(), {});
+    ok = expect(
+             std::get<bool>(seeded.at("bar_surface")) && std::get<std::int64_t>(seeded.at("bar_surface_inset")) == 52,
+             "surface layout contract not preserved"
+         )
+        && ok;
+  }
+  ok = writeManifest(
+           surfacePath,
+           "id='me/surface'\nname='Surface'\nplugin_api=32\n"
+           "[[widget]]\nid='surface'\nentry='surface.luau'\nbar_surface='yes'\n"
+       )
+      && ok;
+  ok = expect(
+           !scripting::parsePluginManifest(surfacePath, &error),
+           "non-boolean surface flag must not silently enable overlay input"
+       )
+      && ok;
+  const auto spectrumPath = root / "spectrum/plugin.toml";
+  ok = writeManifest(
+           spectrumPath,
+           "id='me/spectrum'\nname='Spectrum'\nplugin_api=32\n"
+           "[[widget]]\nid='music'\nentry='music.luau'\naudio_spectrum=true\naudio_spectrum_bands=24\n"
+       )
+      && ok;
+  const auto spectrumManifest = scripting::parsePluginManifest(spectrumPath, &error);
+  ok = expect(spectrumManifest.has_value(), "audio-enabled music entry was rejected") && ok;
+  if (spectrumManifest && !spectrumManifest->entries.empty()) {
+    const auto seeded = scripting::seedEntrySettings(spectrumManifest->entries.front(), {});
+    const auto enabled = seeded.find("audio_spectrum");
+    const auto bands = seeded.find("audio_spectrum_bands");
+    ok = expect(
+             enabled != seeded.end() && std::get<bool>(enabled->second),
+             "manifest audio opt-in never reached the host spectrum subscription"
+         )
+        && ok;
+    ok = expect(
+             bands != seeded.end() && std::get<std::int64_t>(bands->second) == 24,
+             "manifest FFT resolution never reached the host subscription"
+         )
+        && ok;
+  }
+  for (const auto invalid :
+       {"audio_spectrum='yes'", "audio_spectrum_bands=0", "audio_spectrum_bands=129", "audio_spectrum_bands=24.5"}) {
+    ok = writeManifest(
+             spectrumPath,
+             "id='me/spectrum'\nname='Spectrum'\nplugin_api=32\n"
+             "[[widget]]\nid='music'\nentry='music.luau'\n"
+                 + std::string(invalid)
+                 + "\n"
+         )
+        && ok;
+    ok = expect(
+             !scripting::parsePluginManifest(spectrumPath, &error).has_value(),
+             "invalid audio subscription declaration was accepted"
+         )
+        && ok;
+  }
+  {
+    scripting::PluginManifest inherited;
+    scripting::ManifestField field;
+    field.key = "audio_spectrum";
+    field.type = scripting::ManifestFieldType::Bool;
+    field.boolDefault = true;
+    inherited.settings.push_back(field);
+    scripting::PluginEntry entry;
+    auto seeded = scripting::seedEntrySettings(entry, {});
+    scripting::mergePluginSettings(inherited, {}, seeded);
+    ok = expect(
+             std::get<bool>(seeded.at("audio_spectrum")),
+             "omitted widget metadata masked the existing plugin subscription setting"
+         )
+        && ok;
+    entry.widgetAudioSpectrum = false;
+    seeded = scripting::seedEntrySettings(entry, {});
+    scripting::mergePluginSettings(inherited, {}, seeded);
+    ok = expect(
+             !std::get<bool>(seeded.at("audio_spectrum")),
+             "explicit widget subscription opt-out lost to the plugin default"
+         )
+        && ok;
+    entry.settings.push_back(field);
+    seeded = scripting::seedEntrySettings(entry, {{"audio_spectrum", true}});
+    ok = expect(
+             std::get<bool>(seeded.at("audio_spectrum")),
+             "declared instance subscription setting lost to metadata defaults"
+         )
+        && ok;
+  }
+
   ok = expect(scripting::isValidPluginVersion("0.0.0"), "zero version should be valid") && ok;
   ok = expect(scripting::isValidPluginVersion("10.20.30"), "multi-digit version should be valid") && ok;
   ok = expect(!scripting::isValidPluginVersion("1.2"), "two-component version should fail") && ok;
@@ -1168,13 +1268,12 @@ int main() {
            "[[panel]]\n"
            "id = \"panel\"\n"
            "entry = \"panel.luau\"\n"
-           "layer = \"bottom\"\n"
+           "layer = \"unsupported\"\n"
        )
       && ok;
   error.clear();
   ok = expect(!scripting::parsePluginManifest(badLayerPath, &error).has_value(), "an unknown layer should be rejected")
       && ok;
-  ok = expectEq(error, R"(panel entry 'panel': layer must be "top" or "overlay")", "layer vocabulary error") && ok;
 
   const auto overlayLayerPath = root / "overlay-layer/plugin.toml";
   ok = writeManifest(

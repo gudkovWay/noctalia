@@ -14,6 +14,7 @@
 Checkbox::Checkbox() {
   auto box = std::make_unique<Box>();
   m_box = static_cast<Box*>(addChild(std::move(box)));
+  m_box->setPresentationChrome(true);
 
   auto checkGlyph = std::make_unique<Glyph>();
   checkGlyph->setGlyph("check");

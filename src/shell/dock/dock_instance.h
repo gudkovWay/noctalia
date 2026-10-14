@@ -73,6 +73,8 @@ namespace shell::dock {
     // smart_auto_hide: active workspace empty (or overview open) — keep the dock visible.
     bool smartAutoHidePinnedVisible = false;
     Signal<>::ScopedConnection paletteConn;
+    // Last Style::stagecraftEnabled() value the dock chrome geometry was built with.
+    bool appliedStagecraft = false;
     bool suppressItemClick = false; // set on press-release when a hold/drag consumed the gesture
 
     // Drag-to-reorder state.

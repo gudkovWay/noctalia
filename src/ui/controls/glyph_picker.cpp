@@ -62,6 +62,7 @@ public:
         .configure = [this](Flex& flex) {
           flex.setRadius(Style::scaledRadiusMd(m_chromeScale));
           flex.clearBorder();
+          flex.setPresentationChrome(true);
         },
     });
     tile->addChild(

@@ -68,7 +68,7 @@ PluginPanel::PluginPanel(scripting::PluginRuntimeContext context, PluginPanelOpt
       m_dismissOnOutsideClick(options.dismissOnOutsideClick),
       m_keyboardMode(keyboardModeFromManifest(options.keyboardFocus)),
       m_layer(layerShellLayerFromConfig(options.shellConfig.layer)), m_persistent(options.persistent),
-      m_shellConfig(options.shellConfig) {
+      m_decoration(options.decoration), m_shellConfig(options.shellConfig) {
   // The manifest parser already validated every spec, so a parse failure here means the two
   // drifted apart. Skip the entry rather than capture a chord nobody can describe.
   m_captureKeys.reserve(options.captureKeys.size());
@@ -234,12 +234,31 @@ void PluginPanel::startScript() {
   m_runtime->start(m_sourcePath.string(), std::move(source), makeScriptSnapshot());
 }
 
+void PluginPanel::setOpeningGeometry(float width, float height, float anchorX, std::string_view edge) {
+  m_openWidth = width;
+  m_openHeight = height;
+  m_openAnchorX = anchorX;
+  m_openEdge = edge;
+}
+
+void PluginPanel::sendOpeningGeometry() {
+  if (m_runtime == nullptr || m_openWidth <= 0.0F || m_openHeight <= 0.0F) {
+    return;
+  }
+  const double scale = contentScale();
+  (void)m_runtime->enqueueCallArgs(
+      "onPanelGeometry", {m_openWidth / scale, m_openHeight / scale, m_openAnchorX / scale, m_openEdge},
+      makeScriptSnapshot(), {.coalesce = true}
+  );
+}
+
 void PluginPanel::onOpen(std::string_view context) {
   closeContextMenu();
   ++m_openGeneration;
   m_open = true;
   m_openContext = std::string(context);
   if (m_runtime != nullptr) {
+    sendOpeningGeometry();
     (void)m_runtime->enqueueCallStrings("onOpen", std::string(context), {}, makeScriptSnapshot());
   }
   startTickTimer();
@@ -295,6 +314,11 @@ void PluginPanel::doLayout(Renderer& renderer, float width, float height) {
     m_reconciler.setScale(contentScale());
     (void)m_reconciler.reconcile(*m_contentFlex, *m_tree, renderer);
     m_treeDirty = false;
+  }
+  if (m_openWidth != width || m_openHeight != height) {
+    m_openWidth = width;
+    m_openHeight = height;
+    sendOpeningGeometry();
   }
   m_flex->setSize(width, height);
   m_flex->layout(renderer);
@@ -535,6 +559,7 @@ void PluginPanel::reloadScript() {
 
   m_runtime->reload(m_sourcePath.string(), std::move(source), makeScriptSnapshot());
   if (m_open) {
+    sendOpeningGeometry();
     (void)m_runtime->enqueueCallStrings("onOpen", std::string(pendingOpenContext()), {}, makeScriptSnapshot());
   }
   startTickTimer();

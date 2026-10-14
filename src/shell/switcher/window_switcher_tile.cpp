@@ -49,7 +49,10 @@ WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* as
           .fill = colorSpecFromRole(ColorRole::Surface),
           .radius = cardRadius,
           .participatesInLayout = false,
-          .configure = [](Box& box) { box.setClipChildren(true); },
+          .configure = [](Box& box) {
+            box.setClipChildren(true);
+            box.setPresentationChrome(true);
+          },
       })
   );
   m_frame->addChild(
@@ -58,7 +61,10 @@ WindowSwitcherTile::WindowSwitcherTile(float contentScale, AsyncTextureCache* as
           .fill = colorSpecFromRole(ColorRole::SurfaceVariant),
           .radius = previewRadius,
           .participatesInLayout = false,
-          .configure = [](Box& box) { box.setClipChildren(true); },
+          .configure = [](Box& box) {
+            box.setPresentationChrome(true);
+            box.setClipChildren(true);
+          },
       })
   );
   m_previewHost->addChild(

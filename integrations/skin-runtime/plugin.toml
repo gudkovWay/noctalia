@@ -1,0 +1,255 @@
+# Stagecraft skin runtime — presentation only.
+#
+# Entries, and why each exists:
+#   service — the single reader of the native `skin-status` bridge. Publishes
+#             plain data on the plugin state channel as `skin.status`.
+#   widget  — the bar entry: an unobtrusive overview opener (icon + tooltip);
+#             also the pointer path to the dashboard and to the skin chooser.
+#   panel dashboard      — the Stagecraft app scene: music hero, System and AI
+#             sections, one keyboard owner at a time.
+#   panel music          — the passive permanent music scene (r06 band).
+#   panel desktop-status — the passive permanent 244x720 status rail (r07
+#             left side): real system overview, honest Unknown rows, real
+#             openers, clock.
+#   panel summary       — the actual System destination (real host samples,
+#             full disks/load/AI detail).
+#
+# The plugin owns no data and no actions: playback actions are IPC to the
+# original q/tmus:watch service, AI and library detail stay in their own
+# panels, the skin recipe is applied by the native SkinService, which also
+# publishes family/density/topology/colors into the settings declared below.
+#
+# All registered data (music/AI summary, active recipe, supported families)
+# comes from `noctalia msg skin-status`; nothing here polls a provider, reads
+# another plugin's state key, or fabricates a metric.
+
+id = "q/skin-runtime"
+name = "Skin Runtime"
+version = "1.0.0"
+plugin_api = 32
+author = "q"
+license = "MIT"
+dependencies = []
+tags = ["theming", "desktop", "system"]
+icon = "palette"
+description = "Skin runtime: Stagecraft dashboard, passive music scene and System summary, plus the Kumihimo hanging-tag bar, driven by the native skin-status bridge."
+
+# ── Recipe settings, published by the native SkinService ─────────────────────
+# These keys are written through ConfigService::mutateOverrides when a recipe
+# is applied, and read back here with noctalia.getConfig(). Defaults are the
+# frozen Stagecraft material (charcoal / silver cut light / subtle violet) so
+# every surface renders correctly before the first apply.
+
+[[setting]]
+key = "applied_variant"
+type = "string"
+label_key = "settings.applied_variant.label"
+description_key = "settings.applied_variant.description"
+default = ""
+
+[[setting]]
+key = "family"
+type = "select"
+label_key = "settings.family.label"
+description_key = "settings.family.description"
+default = "stagecraft"
+options = [
+  { value = "stagecraft", label_key = "settings.family.option.stagecraft" },
+  { value = "cut-stone", label_key = "settings.family.option.cut-stone" },
+  { value = "wayfinding-field", label_key = "settings.family.option.wayfinding-field" },
+  { value = "adaptive-workbench", label_key = "settings.family.option.adaptive-workbench" },
+  { value = "kumihimo", label_key = "settings.family.option.kumihimo" },
+]
+
+[[setting]]
+key = "density"
+type = "select"
+label_key = "settings.density.label"
+description_key = "settings.density.description"
+default = "comfortable"
+options = [
+  { value = "comfortable", label_key = "settings.density.option.comfortable" },
+  { value = "compact", label_key = "settings.density.option.compact" },
+]
+
+[[setting]]
+key = "topology"
+type = "select"
+label_key = "settings.topology.label"
+description_key = "settings.topology.description"
+default = "top-music-side"
+options = [
+  { value = "top-music-side", label_key = "settings.topology.option.top-music-side" },
+  { value = "top-music-bottom", label_key = "settings.topology.option.top-music-bottom" },
+  { value = "desktop-widget-side", label_key = "settings.topology.option.desktop-widget-side" },
+  { value = "compact-rail", label_key = "settings.topology.option.compact-rail" },
+  { value = "hanging-tags", label_key = "settings.topology.option.hanging-tags" },
+]
+
+[[setting]]
+key = "surface"
+type = "color"
+label_key = "settings.surface.label"
+description_key = "settings.surface.description"
+default = "#22262F"
+
+[[setting]]
+key = "surface_variant"
+type = "color"
+label_key = "settings.surface_variant.label"
+description_key = "settings.surface_variant.description"
+default = "#2C313C"
+
+[[setting]]
+key = "text"
+type = "color"
+label_key = "settings.text.label"
+description_key = "settings.text.description"
+default = "#E7E9EE"
+
+[[setting]]
+key = "muted"
+type = "color"
+label_key = "settings.muted.label"
+description_key = "settings.muted.description"
+default = "#A5ACB9"
+
+[[setting]]
+key = "accent"
+type = "color"
+label_key = "settings.accent.label"
+description_key = "settings.accent.description"
+default = "#B2A3EE"
+
+[[setting]]
+key = "outline"
+type = "color"
+label_key = "settings.outline.label"
+description_key = "settings.outline.description"
+default = "#9DA4B4"
+
+# ── Bar entry ────────────────────────────────────────────────────────────────
+# The bar never takes keyboard focus: no capture_keys, pointer only.
+#   Stagecraft: a small overview opener.
+#     left   -> System summary (the dashboard-first System entry)
+#     middle -> Stagecraft dashboard   (freed by middle = "none")
+#     right  -> skin chooser (q/wallpaper-studio:skins)
+#     wheel  -> volume on the tmus owner
+#   Kumihimo: monitoring on wood; music-preview owns the continuous bar surface.
+#   The native tray remains in its ordinary end lane above that surface.
+[[widget]]
+id = "skin-widget"
+entry = "widget.luau"
+# Host audio bridge (API32 contract, same as q/tmus:tmus-widget): real 24-band
+# spectrum arrives as CSV in onAudioSpectrum. The entry only republishes it on
+# the lightweight `tmus.spectrum` key while Kumihimo is active — no capture
+# process, no synthetic values, no bar redraw.
+audio_spectrum = true
+audio_spectrum_bands = 24
+
+  [widget.actions]
+  middle = "none"
+
+[[widget]]
+id = "bar-clock"
+entry = "bar-clock.luau"
+
+[[widget]]
+id = "music-preview"
+entry = "music-preview.luau"
+bar_surface = true
+bar_surface_inset = 52
+audio_spectrum = true
+audio_spectrum_bands = 24
+
+  [widget.actions]
+  middle = "none"
+
+# ── Dashboard ────────────────────────────────────────────────────────────────
+# The only keyboard-taking surface of this plugin. capture_keys is the exact
+# set of chords the panel consumes; every one of them has an explicit branch
+# in onKey, so a captured key is never left half-handled. Escape is not
+# captured: panel dismissal stays with the host.
+#
+#   ctrl+j / ctrl+k (+ Ctrl+о / Ctrl+л)  section cycle (Music -> System -> AI)
+#   j / k (+ о / л)                      row movement in the focused section
+#   h / l (+ р / д)                      control movement inside the row
+#   Enter                                activate the selected control
+#
+# Cyrillic names are the physical twins recorded with `xkbcli how-to-type
+# --layout ru`; both registers are captured because shift produces a different
+# keysym. Latin letters arrive folded to a single uppercase chord by the host.
+[[panel]]
+id = "dashboard"
+entry = "dashboard.luau"
+width = 1280
+height = 850
+# Custom material surface: the panel renders its own chamfered recipe card,
+# so the native backdrop/padding/shadow is dropped.
+decoration = false
+placement = "floating"
+position = "center"
+capture_keys = [
+  "Return",
+  "H", "J", "K", "L",
+  "Cyrillic_er", "Cyrillic_o", "Cyrillic_el", "Cyrillic_de",
+  "Cyrillic_ER", "Cyrillic_O", "Cyrillic_EL", "Cyrillic_DE",
+  "ctrl+j", "ctrl+k", "ctrl+Cyrillic_o", "ctrl+Cyrillic_el",
+]
+
+# ── Passive music scene ──────────────────────────────────────────────────────
+# Persistent: lives outside the single-panel slot, so it coexists with the
+# library, AI and chooser panels. keyboard_focus = "none" is the point — the
+# scene is passive and never captures a key, so no capture_keys and no footer.
+# Position is the topology lever: the native SkinService republishes
+# `music_position` for top-* / desktop-widget-side topologies. The panel
+# renders its own chamfered r06 band, so decoration is dropped.
+[[panel]]
+id = "music"
+entry = "music.luau"
+width = 1080
+height = 196
+layer = "bottom"
+decoration = false
+placement = "floating"
+position = "top_center"
+persistent = true
+keyboard_focus = "none"
+dismiss_on_outside_click = false
+
+# ── Desktop status rail ──────────────────────────────────────────────────────
+# The r07 left side rail: persistent like the music scene, never takes the
+# keyboard, never dismisses on outside click, pointer-actionable openers only.
+# `desktop-status_position` is injected by the native shell (no [[setting]]
+# here); the SkinService projects the Stagecraft topology into it:
+# top-music-side / desktop-widget-side -> center_left, top-music-bottom ->
+# bottom_center. Renders its own chamfered recipe card, so decoration is
+# dropped. Link state, alerts and session/power have no plugin bindings and
+# are rendered as Unknown or omitted — never faked.
+[[panel]]
+id = "desktop-status"
+entry = "desktop-status.luau"
+width = 244
+height = 720
+layer = "bottom"
+decoration = false
+placement = "floating"
+position = "center_left"
+persistent = true
+keyboard_focus = "none"
+dismiss_on_outside_click = false
+
+# ── System summary ───────────────────────────────────────────────────────────
+# The real System destination of the Stagecraft dashboard. Read-only host
+# samples; no invented dials, no shortcut label (no resolved System binding).
+[[panel]]
+id = "summary"
+entry = "summary.luau"
+width = 560
+height = 620
+placement = "floating"
+position = "center"
+
+[[service]]
+id = "watch"
+entry = "service.luau"

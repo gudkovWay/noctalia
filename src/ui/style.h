@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/core/render_styles.h"
 #include "ui/signal.h"
 
 namespace Style {
@@ -100,6 +101,15 @@ namespace Style {
   [[nodiscard]] bool buttonBordersEnabled() noexcept;
   void setButtonBordersEnabled(bool enabled);
   Signal<>& buttonBordersChanged();
+
+  // Process-only Stagecraft profile switch. Main-thread only. When enabled, geometry
+  // consumers receive all-chamfer silhouettes from presentationCorners() and structural
+  // thin borders, while the normal user style values below are retained and restored on
+  // disable. Toggling emits paletteChanged() (not a second theme bus) so subscribed
+  // geometry rebuilds even when the palette is unchanged.
+  [[nodiscard]] bool stagecraftEnabled() noexcept;
+  void setStagecraftEnabled(bool enabled);
+  [[nodiscard]] CornerShapes presentationCorners(CornerShapes normal = {}) noexcept;
 
   [[nodiscard]] bool inputBordersEnabled() noexcept;
   void setInputBordersEnabled(bool enabled);

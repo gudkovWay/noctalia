@@ -17,7 +17,7 @@ namespace scripting {
 
   // Vocabulary for the injected floating-layer setting and optional `[[panel]]`
   // default. An attached panel always sits at its host bar's layer.
-  inline constexpr std::array<std::string_view, 2> kPanelLayers = {"top", "overlay"};
+  inline constexpr std::array<std::string_view, 3> kPanelLayers = {"bottom", "top", "overlay"};
 
   struct PluginPanelShellConfig {
     PanelPlacement placement = PanelPlacement::Floating;

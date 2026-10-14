@@ -3,6 +3,7 @@
 #include "core/ui_phase.h"
 #include "ui/builders.h"
 #include "ui/controls/box.h"
+#include "ui/style.h"
 
 #include <algorithm>
 #include <cmath>
@@ -238,7 +239,18 @@ void DesktopWidget::applyBackground() {
     m_bgBox->setPosition(0.0F, 0.0F);
     m_bgBox->setSize(boxW, boxH);
     m_bgBox->setFill(m_bgColor);
-    m_bgBox->setRadius(std::round(m_bgRadius * m_baseScale));
+    const float radius = std::round(m_bgRadius * m_baseScale);
+    if (Style::stagecraftEnabled()) {
+      // Chamfered card silhouette; the host tessellates its blur region to match.
+      m_bgBox->setCornerShapes(Style::presentationCorners(CornerShapes{}));
+      m_bgBox->setRadii(Radii{radius, radius, radius, radius});
+    } else {
+      // setRadius does not reset a previously chamfered node, so restore the normal
+      // (all-convex) corner shape explicitly; otherwise the drawn card would stay
+      // chamfered while the host's blur mask returns to rounded.
+      m_bgBox->setCornerShapes(CornerShapes{});
+      m_bgBox->setRadius(radius);
+    }
   }
 
   Node* outerRoot = m_outerRoot ? m_outerRoot.get() : m_outerRootPtr;

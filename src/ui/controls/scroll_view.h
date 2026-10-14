@@ -54,6 +54,11 @@ public:
   // Section card background. The outline follows the [shell].card_borders
   // toggle unless a caller passes an explicit showBorder.
   void setCardStyle(float scale = 1.0F, float fillOpacity = 1.0F, bool showBorder = Style::cardBordersEnabled());
+  // Draw the presentation-profile silhouette on this view's background card.
+  // Enabled by the card preset; while the Stagecraft profile is active the
+  // corners become 45-degree chamfer cuts sized by the remembered normal
+  // radius, and the normal silhouette returns when the profile clears.
+  void setPresentationChrome(bool enabled);
   void bindState(ScrollViewState* state);
   void setOnScrollChanged(std::function<void(float)> callback);
 
@@ -115,6 +120,7 @@ private:
   float m_backgroundBorderWidth = 0.0F;
   float m_backgroundRadius = Style::scaledRadiusMd();
   float m_backgroundSoftness = 1.0F;
+  bool m_presentationChrome = false;
   bool m_scrollbarShown = false;
   bool m_showScrollbar = true;
   bool m_dragging = false;

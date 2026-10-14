@@ -397,6 +397,22 @@ void PanelManager::initialize(CompositorPlatform& platform, ConfigService* confi
   m_renderContext = renderContext;
   m_clickShield.initialize(platform.wayland());
   m_persistentHost.initialize(platform, config, renderContext);
+  m_appliedStagecraft = Style::stagecraftEnabled();
+  m_paletteConn = paletteChanged().connect([this] { onPaletteChanged(); });
+}
+
+void PanelManager::onPaletteChanged() {
+  const bool stagecraft = Style::stagecraftEnabled();
+  if (stagecraft == m_appliedStagecraft) {
+    return;
+  }
+  m_appliedStagecraft = stagecraft;
+  m_persistentHost.onStagecraftChanged();
+  if (!isOpen() || m_surface == nullptr || m_activePanel == nullptr) {
+    return;
+  }
+  m_pendingStagecraftRebuild = true;
+  m_surface->requestLayout();
 }
 
 void PanelManager::setOpenSettingsWindowCallback(std::function<void(std::string)> callback) {
@@ -610,6 +626,7 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
 
   auto panelWidth = static_cast<std::uint32_t>(m_activePanel->preferredWidth());
   auto panelHeight = static_cast<std::uint32_t>(m_activePanel->preferredHeight());
+  m_activePanel->setOpeningGeometry(static_cast<float>(panelWidth), static_cast<float>(panelHeight), -1.0F, {});
   m_sourceBarName = barConfig.name;
   const bool isBottom = barConfig.position == "bottom";
   const bool isLeft = barConfig.position == "left";
@@ -1050,6 +1067,10 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
     m_panelInsetY = visualY - surfaceY;
     m_panelVisualWidth = panelWidth;
     m_panelVisualHeight = panelHeight;
+    m_activePanel->setOpeningGeometry(
+        static_cast<float>(panelWidth), static_cast<float>(panelHeight),
+        useAnchorForAttached ? request.anchorX - static_cast<float>(visualX) : -1.0F, barPosition
+    );
     m_attachedBackgroundOpacity = m_activePanel->inheritsBarBackgroundOpacity()
         ? barConfig.backgroundOpacity
         : m_activePanel->attachedBackgroundOpacityOverride();
@@ -1089,7 +1110,12 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
     AttachedPanelGeometry attachedGeometry;
     attachedGeometry.cornerRadius = cornerRadius;
     attachedGeometry.bulgeRadius = cornerRadius;
-    if (barIsVertical) {
+    if (Style::stagecraftEnabled()) {
+      attachedGeometry.x = static_cast<float>(barSurfaceLocalVisualX);
+      attachedGeometry.y = static_cast<float>(barSurfaceLocalVisualY);
+      attachedGeometry.width = static_cast<float>(panelWidth);
+      attachedGeometry.height = static_cast<float>(panelHeight);
+    } else if (barIsVertical) {
       attachedGeometry.x = static_cast<float>(barSurfaceLocalVisualX);
       attachedGeometry.y = static_cast<float>(barSurfaceLocalVisualY) - cornerRadius;
       attachedGeometry.width = static_cast<float>(panelWidth);
@@ -2253,8 +2279,8 @@ void PanelManager::publishAttachedPanelGeometry(float revealProgress) {
        || m_attachedRevealDirection == AttachedRevealDirection::Left);
   const float panelMainDim = vertical ? geometry.width : geometry.height;
   const float bulgeRevealAmount = std::clamp(originalRadius - panelMainDim * (1.0F - progress), 0.0F, originalRadius);
-  const float crossDelta = originalRadius - bulgeRevealAmount;
-  geometry.bulgeRadius = bulgeRevealAmount;
+  const float crossDelta = Style::stagecraftEnabled() ? 0.0F : (originalRadius - bulgeRevealAmount);
+  geometry.bulgeRadius = Style::stagecraftEnabled() ? originalRadius : bulgeRevealAmount;
 
   // The away-side convex corners are visible at full radius throughout the animation.
   // Extend the body main-axis dimension toward the bar so it is at least 2*cornerRadius.
@@ -2335,7 +2361,8 @@ void PanelManager::applyPanelCompositorBlur(
   }
 
   const float radius = Style::scaledRadiusXl(m_activePanel->contentScale());
-  const CornerShapes corners = m_attachedToBar ? attached_panel::cornerShapes(m_attachedBarPosition) : CornerShapes{};
+  const CornerShapes corners = m_attachedToBar ? attached_panel::cornerShapes(m_attachedBarPosition)
+                                               : Style::presentationCorners(CornerShapes{});
   const RectInsets logicalInset =
       m_attachedToBar ? attached_panel::logicalInset(m_attachedBarPosition, radius) : RectInsets{};
   const Radii radii = Radii{radius, radius, radius, radius};
@@ -2392,6 +2419,9 @@ void PanelManager::applyAttachedDecorationStyle() {
   if (m_bgNode != nullptr) {
     auto* bg = static_cast<Box*>(m_bgNode);
     bg->setFill(colorSpecFromRole(ColorRole::Surface, m_attachedBackgroundOpacity));
+    bg->setCornerShapes(attached_panel::cornerShapes(m_attachedBarPosition));
+    bg->setLogicalInset(attached_panel::logicalInset(m_attachedBarPosition, radius));
+    bg->setRadii(Radii{radius, radius, radius, radius});
   }
 
   if (m_panelShadowNode != nullptr && m_config != nullptr) {
@@ -2482,7 +2512,10 @@ void PanelManager::onConfigReloaded() {
       m_panelShadowNode->setStyle(
           shell::surface_shadow::style(
               shadowConfig, panelBackgroundOpacity,
-              shell::surface_shadow::Shape{.radius = Radii{shadowRadius, shadowRadius, shadowRadius, shadowRadius}}
+              shell::surface_shadow::Shape{
+                  .corners = Style::presentationCorners(CornerShapes{}),
+                  .radius = Radii{shadowRadius, shadowRadius, shadowRadius, shadowRadius},
+              }
           )
       );
     }
@@ -2587,7 +2620,14 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
         if (panelBorders) {
           bg->setBorder(colorSpecFromRole(ColorRole::Outline, backgroundOpacity), Style::borderWidth);
         }
+        if (Style::stagecraftEnabled()) {
+          const float radius = Style::scaledRadiusXl(m_activePanel->contentScale());
+          bg->setCornerShapes(Style::presentationCorners(CornerShapes{}));
+          bg->setLogicalInset(RectInsets{});
+          bg->setRadii(Radii{radius, radius, radius, radius});
+        }
       }
+      bg->setMaterial(Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None);
       m_bgNode = sceneParent->addChild(std::move(bg));
     }
 
@@ -2690,10 +2730,11 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
   const float attachedRadius = m_attachedToBar ? Style::scaledRadiusXl(m_activePanel->contentScale()) : 0.0F;
   const bool barIsVertical = m_attachedToBar && (m_attachedBarPosition == "left" || m_attachedBarPosition == "right");
   // The bg extends past the body along the bar cross axis for concave-corner notches.
-  const float bgX = barIsVertical ? panelX : panelX - attachedRadius;
-  const float bgY = barIsVertical ? panelY - attachedRadius : panelY;
-  const float bgW = barIsVertical ? panelW : panelW + attachedRadius * 2.0F;
-  const float bgH = barIsVertical ? panelH + attachedRadius * 2.0F : panelH;
+  const float attachedOverhang = (m_attachedToBar && !Style::stagecraftEnabled()) ? attachedRadius : 0.0F;
+  const float bgX = barIsVertical ? panelX : panelX - attachedOverhang;
+  const float bgY = barIsVertical ? panelY - attachedOverhang : panelY;
+  const float bgW = barIsVertical ? panelW : panelW + attachedOverhang * 2.0F;
+  const float bgH = barIsVertical ? panelH + attachedOverhang * 2.0F : panelH;
 
   if (m_panelShadowNode != nullptr && m_config != nullptr) {
     const auto& shadowConfig = m_config->config().shell.shadow;
@@ -2711,7 +2752,10 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
       m_panelShadowNode->setStyle(
           shell::surface_shadow::style(
               shadowConfig, panelBackgroundOpacity,
-              shell::surface_shadow::Shape{.radius = Radii{shadowRadius, shadowRadius, shadowRadius, shadowRadius}}
+              shell::surface_shadow::Shape{
+                  .corners = Style::presentationCorners(CornerShapes{}),
+                  .radius = Radii{shadowRadius, shadowRadius, shadowRadius, shadowRadius},
+              }
           )
       );
     }
@@ -2720,6 +2764,18 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
   if (m_bgNode != nullptr) {
     m_bgNode->setPosition(bgX, bgY);
     m_bgNode->setSize(bgW, bgH);
+    static_cast<Box*>(m_bgNode)->setMaterial(
+        Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None
+    );
+    if (!m_attachedToBar) {
+      auto* bg = static_cast<Box*>(m_bgNode);
+      bg->setCornerShapes(Style::presentationCorners(CornerShapes{}));
+      bg->setLogicalInset(RectInsets{});
+      if (Style::stagecraftEnabled()) {
+        const float radius = Style::scaledRadiusXl(m_activePanel->contentScale());
+        bg->setRadii(Radii{radius, radius, radius, radius});
+      }
+    }
   }
 
   if (m_panelContactShadowNode != nullptr) {
@@ -2798,10 +2854,12 @@ void PanelManager::prepareFrame(bool needsUpdate, bool needsLayout) {
   const auto width = m_surface->width();
   const auto height = m_surface->height();
 
-  const bool needsSceneBuild = m_sceneRoot == nullptr
+  const bool needsSceneBuild = m_pendingStagecraftRebuild
+      || m_sceneRoot == nullptr
       || static_cast<std::uint32_t>(std::round(m_sceneRoot->width())) != width
       || static_cast<std::uint32_t>(std::round(m_sceneRoot->height())) != height;
   if (needsSceneBuild) {
+    m_pendingStagecraftRebuild = false;
     buildScene(width, height);
   }
 

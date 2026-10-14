@@ -147,6 +147,8 @@ namespace config_export {
         resolved.reserveSpace = *ovr.reserveSpace;
       if (ovr.layer)
         resolved.layer = *ovr.layer;
+      if (ovr.widthMode)
+        resolved.widthMode = *ovr.widthMode;
       if (ovr.thickness)
         resolved.thickness = *ovr.thickness;
       if (ovr.backgroundOpacity)

@@ -44,6 +44,7 @@ FileEntryTile::FileEntryTile(float scale, ThumbnailService* thumbnails) : m_scal
 
   auto background = ui::box({
       .radius = Style::scaledRadiusLg(scale),
+      .configure = [](Box& box) { box.setPresentationChrome(true); },
   });
   m_background = static_cast<Box*>(addChild(std::move(background)));
 

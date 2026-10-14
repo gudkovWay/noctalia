@@ -45,7 +45,7 @@ uniform vec4 u_gradient_color0;
 uniform vec4 u_gradient_color1;
 uniform vec4 u_gradient_color2;
 uniform vec4 u_gradient_color3;
-uniform vec4 u_corner_shapes; // tl, tr, br, bl: 0 = convex, 1 = concave
+uniform vec4 u_corner_shapes; // tl, tr, br, bl: 0 = convex, 1 = concave, 2 = chamfer
 uniform vec4 u_logical_inset; // left, top, right, bottom
 uniform vec4 u_radii;  // tl, tr, br, bl
 uniform float u_softness;
@@ -60,6 +60,7 @@ uniform vec2 u_shadow_exclusion_size;
 uniform vec4 u_shadow_exclusion_corner_shapes;
 uniform vec4 u_shadow_exclusion_logical_inset;
 uniform vec4 u_shadow_exclusion_radii;
+uniform int u_material; // 0 = plain fill/border, 1 = stagecraft structural relief
 varying vec2 v_pixel;
 
 float rounded_rect_distance(vec2 point, vec2 size, vec4 radii) {
@@ -84,11 +85,35 @@ float shape_distance(vec2 point, vec2 size, vec4 radii, vec4 corner_shapes, vec4
     float max_radius = max(min(body_size.x, body_size.y) * 0.5, 0.0);
     vec4 r = clamp(radii, vec4(0.0), vec4(max_radius));
 
-    bool tl_concave = corner_shapes.x > 0.5;
-    bool tr_concave = corner_shapes.y > 0.5;
-    bool br_concave = corner_shapes.z > 0.5;
-    bool bl_concave = corner_shapes.w > 0.5;
+    bool tl_concave = corner_shapes.x > 0.5 && corner_shapes.x < 1.5;
+    bool tr_concave = corner_shapes.y > 0.5 && corner_shapes.y < 1.5;
+    bool br_concave = corner_shapes.z > 0.5 && corner_shapes.z < 1.5;
+    bool bl_concave = corner_shapes.w > 0.5 && corner_shapes.w < 1.5;
     bool any_concave = tl_concave || tr_concave || br_concave || bl_concave;
+
+    bool tl_chamfer = corner_shapes.x > 1.5;
+    bool tr_chamfer = corner_shapes.y > 1.5;
+    bool br_chamfer = corner_shapes.z > 1.5;
+    bool bl_chamfer = corner_shapes.w > 1.5;
+    bool any_chamfer = tl_chamfer || tr_chamfer || br_chamfer || bl_chamfer;
+
+    if (any_chamfer) {
+        vec2 centered = point - body_min - body_size * 0.5;
+        float corner_shape = centered.x < 0.0
+            ? (centered.y < 0.0 ? corner_shapes.x : corner_shapes.w)
+            : (centered.y < 0.0 ? corner_shapes.y : corner_shapes.z);
+        if (corner_shape > 1.5) {
+            // One quadrant's diagonal cut plus the rectangle half-planes.
+            // The plane distance is sufficient for coverage and inward borders.
+            float cut = centered.x < 0.0
+                ? (centered.y < 0.0 ? r.x : r.w)
+                : (centered.y < 0.0 ? r.y : r.z);
+            vec2 q = abs(centered) - body_size * 0.5;
+            float dist = max(max(q.x, q.y), (q.x + q.y + cut) * 0.70710678);
+            float clip = max(max(-point.x, point.x - size.x), max(-point.y, point.y - size.y));
+            return max(dist, clip);
+        }
+    }
 
     if (!any_concave) {
         return rounded_rect_distance(point - body_min, body_size, r);
@@ -309,6 +334,76 @@ void main() {
         fill_base = gradient_fill(gradient_pos);
     }
 
+    if (u_material == 1) {
+        // Structural relief frame, computed in this one rect draw. Distances are
+        // in logical pixels (the same unit as u_rect_size), so the band and the
+        // supports are logical-sized regardless of the surface scale; AA still
+        // uses the derivative-normalized coverage.
+        float min_dim = min(u_rect_size.x, u_rect_size.y);
+        // Band width: capped at 8 logical px and never past the half extent, so a
+        // tiny rect keeps a visible interior instead of collapsing to solid band.
+        float band = min(8.0, max(min_dim * 0.5, 0.0));
+        float band_t = clamp(-outer_distance / max(band, 0.0001), 0.0, 1.0);
+
+        // Metal tone from the live border role; a clear border still yields a
+        // readable frame by lifting the live fill rather than a fixed recipe color.
+        float border_alpha = u_border_color.a;
+        vec3 metal = border_alpha > 0.001 ? u_border_color.rgb : mix(u_color.rgb, vec3(1.0), 0.22);
+        vec3 highlight = mix(metal, vec3(1.0), 0.30); // continuous bevel highlight
+        vec3 recess = metal * 0.42;                   // recessed dark groove
+        vec3 face = mix(metal, u_color.rgb, 0.55);    // reflected inner face
+        vec3 base_mid = mix(highlight, face, 0.5);
+
+        float bevel = smoothstep(0.0, 0.38, band_t);
+        float groove = smoothstep(0.34, 0.55, band_t) * (1.0 - smoothstep(0.55, 0.80, band_t));
+        float reflected = smoothstep(0.62, 1.0, band_t);
+        vec3 band_rgb = mix(highlight, base_mid, bevel);
+        band_rgb = mix(band_rgb, recess, groove);
+        band_rgb = mix(band_rgb, face, reflected);
+
+        // Bounded asymmetric sculptural supports: a stepped raised block at the
+        // upper-left and a quieter mirrored ledge at the lower-right, stepping
+        // inward by at most 14 logical px. They shade the same band/face; no
+        // second outline is drawn and content nodes render above them.
+        float support = min(14.0, min_dim * 0.5);
+        vec2 from_tl = local_point;
+        vec2 from_br = u_rect_size - local_point;
+        float ul_box = (1.0 - smoothstep(support - 1.5, support, from_tl.x))
+            * (1.0 - smoothstep(support - 1.5, support, from_tl.y));
+        float ul_step = min(from_tl.x, from_tl.y);
+        float ul_plateau = 1.0 - smoothstep(support * 0.42, support * 0.58, ul_step);
+        float ul_ledge = 1.0 - smoothstep(0.0, 1.4, abs(ul_step - support * 0.5));
+        float lr_support = support * 0.5;
+        float lr_box = (1.0 - smoothstep(lr_support - 1.5, lr_support, from_br.x))
+            * (1.0 - smoothstep(lr_support - 1.5, lr_support, from_br.y));
+        float lr_step = min(from_br.x, from_br.y);
+        float lr_plateau = 1.0 - smoothstep(lr_support * 0.45, lr_support * 0.6, lr_step);
+
+        float frame_alpha = border_alpha > 0.001 ? border_alpha : u_color.a;
+        float inner_coverage = coverage_for(outer_distance + band);
+        vec3 band_pm = band_rgb * frame_alpha;
+        vec3 fill_pm = fill_base.rgb * fill_base.a;
+        vec3 interior_rgb = mix(band_pm, fill_pm, inner_coverage);
+        float interior_a = mix(frame_alpha, fill_base.a, inner_coverage);
+
+        // The supports shade the frame face itself, so they read across the band
+        // and on the interior fill beneath the content, not as a separate shape.
+        vec3 lift = mix(highlight, vec3(1.0), 0.18);
+        vec3 support_rgb = mix(face, lift, 0.6);
+        support_rgb = mix(support_rgb, highlight, (ul_ledge * ul_box + 0.6 * lr_box * (1.0 - lr_plateau)) * 0.6);
+        float support_mix = clamp(ul_box * (0.5 + 0.5 * ul_plateau) + lr_box * lr_plateau, 0.0, 1.0);
+        float support_alpha = max(interior_a, frame_alpha);
+        interior_rgb = mix(interior_rgb, support_rgb * support_alpha, support_mix);
+        interior_a = mix(interior_a, support_alpha, support_mix);
+
+        float out_alpha = interior_a * outer_coverage;
+        if (out_alpha <= 0.0) {
+            discard;
+        }
+        gl_FragColor = vec4(interior_rgb * outer_coverage, out_alpha);
+        return;
+    }
+
     if (u_border_width <= 0.0 || u_border_color.a <= 0.0) {
         float out_alpha = fill_base.a * outer_coverage;
         if (out_alpha <= 0.0) {
@@ -318,9 +413,16 @@ void main() {
         return;
     }
 
-    bool any_concave = u_corner_shapes.x > 0.5 || u_corner_shapes.y > 0.5 || u_corner_shapes.z > 0.5 || u_corner_shapes.w > 0.5;
+    bool any_concave = (u_corner_shapes.x > 0.5 && u_corner_shapes.x < 1.5)
+        || (u_corner_shapes.y > 0.5 && u_corner_shapes.y < 1.5)
+        || (u_corner_shapes.z > 0.5 && u_corner_shapes.z < 1.5)
+        || (u_corner_shapes.w > 0.5 && u_corner_shapes.w < 1.5);
+    bool any_chamfer = u_corner_shapes.x > 1.5 || u_corner_shapes.y > 1.5
+        || u_corner_shapes.z > 1.5 || u_corner_shapes.w > 1.5;
     float inner_distance;
-    if (any_concave) {
+    if (any_concave || any_chamfer) {
+        // Both carved and chamfered boundaries are produced by an exact SDF, so
+        // the inward border offset is simply the distance shifted by the width.
         inner_distance = outer_distance + u_border_width;
     } else {
         vec4 inner_radii = max(u_radii - vec4(u_border_width), vec4(0.0));
@@ -399,6 +501,7 @@ void RectProgram::ensureInitialized() {
   m_shadowExclusionCornerShapesLocation = glGetUniformLocation(m_program.id(), "u_shadow_exclusion_corner_shapes");
   m_shadowExclusionLogicalInsetLocation = glGetUniformLocation(m_program.id(), "u_shadow_exclusion_logical_inset");
   m_shadowExclusionRadiiLocation = glGetUniformLocation(m_program.id(), "u_shadow_exclusion_radii");
+  m_materialLocation = glGetUniformLocation(m_program.id(), "u_material");
   m_transformLocation = glGetUniformLocation(m_program.id(), "u_transform");
 
   if (m_positionLocation < 0
@@ -430,6 +533,7 @@ void RectProgram::ensureInitialized() {
       || m_shadowExclusionCornerShapesLocation < 0
       || m_shadowExclusionLogicalInsetLocation < 0
       || m_shadowExclusionRadiiLocation < 0
+      || m_materialLocation < 0
       || m_transformLocation < 0) {
     throw std::runtime_error("failed to query rounded-rect shader locations");
   }
@@ -466,6 +570,7 @@ void RectProgram::destroy() {
   m_shadowExclusionCornerShapesLocation = -1;
   m_shadowExclusionLogicalInsetLocation = -1;
   m_shadowExclusionRadiiLocation = -1;
+  m_materialLocation = -1;
   m_transformLocation = -1;
 }
 
@@ -516,7 +621,17 @@ void RectProgram::draw(
   glUniform4f(m_gradientColor1Location, stop1.color.r, stop1.color.g, stop1.color.b, stop1.color.a);
   glUniform4f(m_gradientColor2Location, stop2.color.r, stop2.color.g, stop2.color.b, stop2.color.a);
   glUniform4f(m_gradientColor3Location, stop3.color.r, stop3.color.g, stop3.color.b, stop3.color.a);
-  const auto cornerShapeValue = [](CornerShape shape) { return shape == CornerShape::Concave ? 1.0F : 0.0F; };
+  const auto cornerShapeValue = [](CornerShape shape) {
+    switch (shape) {
+    case CornerShape::Concave:
+      return 1.0F;
+    case CornerShape::Chamfer:
+      return 2.0F;
+    case CornerShape::Convex:
+      break;
+    }
+    return 0.0F;
+  };
   glUniform4f(
       m_cornerShapesLocation, cornerShapeValue(style.corners.tl), cornerShapeValue(style.corners.tr),
       cornerShapeValue(style.corners.br), cornerShapeValue(style.corners.bl)
@@ -549,6 +664,7 @@ void RectProgram::draw(
       m_shadowExclusionRadiiLocation, style.shadowExclusionRadius.tl, style.shadowExclusionRadius.tr,
       style.shadowExclusionRadius.br, style.shadowExclusionRadius.bl
   );
+  glUniform1i(m_materialLocation, style.material == RectMaterial::Stagecraft ? 1 : 0);
   glUniformMatrix3fv(m_transformLocation, 1, GL_FALSE, quadTransform.m.data());
   const auto posAttr = static_cast<GLuint>(m_positionLocation);
   glVertexAttribPointer(posAttr, 2, GL_FLOAT, GL_FALSE, 0, vertices.data());

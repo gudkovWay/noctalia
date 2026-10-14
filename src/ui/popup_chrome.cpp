@@ -107,7 +107,11 @@ namespace popup_chrome {
     auto shadowNode = std::make_unique<RectNode>();
     shadowNode->setStyle(
         shell::surface_shadow::style(
-            shadow, backgroundOpacity, shell::surface_shadow::Shape{.radius = Radii{radius, radius, radius, radius}}
+            shadow, backgroundOpacity,
+            shell::surface_shadow::Shape{
+                .corners = Style::presentationCorners(),
+                .radius = Radii{radius, radius, radius, radius},
+            }
         )
     );
     const auto offset = shadowDirectionOffset(shadow.direction);

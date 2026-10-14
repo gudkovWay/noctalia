@@ -223,6 +223,24 @@ void Slider::setControlHeight(float height) {
 
 void Slider::setWheelAdjustEnabled(bool enabled) { m_wheelAdjustEnabled = enabled; }
 
+void Slider::setCustomPalette(SliderPalette customPalette) {
+  if (m_customPalette.has_value() && *m_customPalette == customPalette) {
+    return;
+  }
+  m_customPalette = customPalette;
+  applyVisualState();
+  markPaintDirty();
+}
+
+void Slider::clearCustomPalette() {
+  if (!m_customPalette.has_value()) {
+    return;
+  }
+  m_customPalette.reset();
+  applyVisualState();
+  markPaintDirty();
+}
+
 void Slider::setOnValueChanged(std::function<void(double)> callback) { m_onValueChanged = std::move(callback); }
 
 void Slider::setOnDragEnd(std::function<void()> callback) { m_onDragEnd = std::move(callback); }
@@ -287,22 +305,62 @@ void Slider::applyVisualState() {
   const bool pressing = m_inputArea != nullptr && m_inputArea->pressed();
   const bool focused = m_inputArea != nullptr && m_inputArea->focused();
 
-  Color trackColor = resolved(ColorRole::Outline);
-  Color fillColor = resolved(ColorRole::Primary);
-  Color thumbColor = resolved(ColorRole::OnPrimary);
-  Color thumbBorder = resolved(ColorRole::Outline);
+  const bool custom = m_customPalette.has_value();
+
+  Color trackColor =
+      custom && m_customPalette->track ? resolveColorSpec(*m_customPalette->track) : resolved(ColorRole::Outline);
+  Color fillColor =
+      custom && m_customPalette->fill ? resolveColorSpec(*m_customPalette->fill) : resolved(ColorRole::Primary);
+  Color thumbColor =
+      custom && m_customPalette->thumb ? resolveColorSpec(*m_customPalette->thumb) : resolved(ColorRole::OnPrimary);
+  Color thumbBorder =
+      custom && m_customPalette->thumb ? resolveColorSpec(*m_customPalette->thumb) : resolved(ColorRole::Outline);
 
   m_thumb->setVisible(m_enabled);
 
   if (!m_enabled) {
-    trackColor = resolved(ColorRole::Outline, Style::disabledOutlineAlpha);
-    fillColor = resolved(ColorRole::Primary, 0.5F);
+    if (custom) {
+      // Derive the disabled tier from the supplied colors instead of a host role.
+      if (m_customPalette->track) {
+        trackColor = resolveColorSpec(scaleAlpha(*m_customPalette->track, Style::disabledOutlineAlpha));
+      }
+      if (m_customPalette->fill) {
+        fillColor = resolveColorSpec(scaleAlpha(*m_customPalette->fill, 0.5F));
+      }
+    } else {
+      trackColor = resolved(ColorRole::Outline, Style::disabledOutlineAlpha);
+      fillColor = resolved(ColorRole::Primary, 0.5F);
+    }
   } else if (pressing) {
-    fillColor = resolved(ColorRole::Primary);
+    // Press keeps the supplied fill; only the native palette substitutes Primary here.
+    if (custom) {
+      if (m_customPalette->fill) {
+        fillColor = resolveColorSpec(*m_customPalette->fill);
+      }
+    } else {
+      fillColor = resolved(ColorRole::Primary);
+    }
   } else if (focused) {
-    thumbBorder = resolveColorSpec(focusRingColorSpec());
+    if (custom) {
+      if (m_customPalette->focus) {
+        thumbBorder = resolveColorSpec(*m_customPalette->focus);
+      } else if (m_customPalette->thumb) {
+        thumbBorder = resolveColorSpec(*m_customPalette->thumb);
+      }
+    } else {
+      thumbBorder = resolveColorSpec(focusRingColorSpec());
+    }
   } else if (hovering) {
-    thumbBorder = resolved(ColorRole::Hover);
+    if (custom) {
+      // A supplied fill is the local accent, mirroring the native hover ring.
+      if (m_customPalette->fill) {
+        thumbBorder = resolveColorSpec(*m_customPalette->fill);
+      } else if (m_customPalette->thumb) {
+        thumbBorder = resolveColorSpec(*m_customPalette->thumb);
+      }
+    } else {
+      thumbBorder = resolved(ColorRole::Hover);
+    }
   }
 
   auto trackStyle = solidStyle(trackColor, m_trackHeight * 0.5F);

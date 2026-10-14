@@ -59,6 +59,8 @@ struct BarInstance {
   Node* slideRoot = nullptr;
   float slideHiddenDx = 0.0F;
   float slideHiddenDy = 0.0F;
+  // Measured main-axis surface extent for width_mode="content" bars; 0 before the first measurement.
+  float contentMainSize = 0.0F;
   InputDispatcher inputDispatcher;
   // Gestures for the parts of the bar no widget covers. The sink is never mounted in the scene; it
   // is used only for its scroll-detent accumulator, so dead-zone scrolling quantizes like a widget.
@@ -84,6 +86,7 @@ struct BarInstance {
   Box* shadowLeft = nullptr;
   Box* shadowRight = nullptr;
   Node* contentClip = nullptr;
+  Node* surfaceUnderlay = nullptr;
   // Unclipped layer between the bar background and contentClip; hosts the hover pills of
   // capsule-less widgets so they neither affect layout nor get clipped at section boundaries.
   Node* hoverUnderlay = nullptr;
@@ -107,4 +110,8 @@ struct BarInstance {
 
   Signal<>::ScopedConnection paletteConn;
   std::optional<AttachedPanelGeometry> attachedPanelGeometry;
+  // Last Style::stagecraftEnabled() value the chrome geometry was built with. A
+  // change detected on paletteChanged triggers an in-place scene rebuild so the
+  // silhouette, shadow, blur and input regions all move to the new corner shapes.
+  bool appliedStagecraft = false;
 };

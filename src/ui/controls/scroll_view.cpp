@@ -305,6 +305,7 @@ void ScrollView::setCardStyle(float scale, float fillOpacity, bool showBorder) {
   setRadius(Style::scaledRadiusXl(scale));
   setViewportPaddingH(Style::cardPadding * scale);
   setViewportPaddingV(Style::cardPadding * scale);
+  setPresentationChrome(true);
 }
 
 void ScrollView::bindState(ScrollViewState* state) {
@@ -379,12 +380,21 @@ void ScrollView::applyPalette() {
             .fill = resolveColorSpec(m_backgroundFill),
             .border = resolveColorSpec(m_backgroundBorder),
             .fillMode = FillMode::Solid,
+            .corners = m_presentationChrome ? Style::presentationCorners() : CornerShapes{},
             .radius = m_backgroundRadius,
             .softness = m_backgroundSoftness,
             .borderWidth = m_backgroundBorderWidth,
         }
     );
   }
+}
+
+void ScrollView::setPresentationChrome(bool enabled) {
+  if (m_presentationChrome == enabled) {
+    return;
+  }
+  m_presentationChrome = enabled;
+  applyPalette();
 }
 
 void ScrollView::doLayout(Renderer& renderer) {
