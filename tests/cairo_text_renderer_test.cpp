@@ -1,9 +1,11 @@
 #include "render/text/cairo_text_renderer.h"
+#include "ui/style.h"
 
 #include <array>
 #include <cmath>
 #include <print>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -91,6 +93,28 @@ namespace {
 int main() {
   CairoTextRenderer renderer;
   renderer.initialize(nullptr, nullptr);
+  renderer.setFontFamily("monospace");
+  const auto baseText = renderer.measure(1.0F, "iiiiWWWW", 18.0F);
+  Style::setKumihimoEnabled(true);
+  const auto materialText = renderer.measure(1.0F, "iiiiWWWW", 18.0F);
+  const auto expectedSans =
+      renderer.measure(1.0F, "iiiiWWWW", 18.0F, FontWeight::Normal, 0.0F, 0, TextAlign::Start, "Noto Sans");
+  if (!sameMetrics(materialText, expectedSans)) {
+    std::println(stderr, "cairo_text_renderer_test: material text retained stale configured-font metrics");
+    return 1;
+  }
+  std::vector<float> stops;
+  renderer.measureCursorStops(1.0F, "iiiiWWWW", 18.0F, {8}, stops);
+  if (stops.size() != 1 || std::abs(stops[0] - materialText.width) > 0.5F) {
+    std::println(stderr, "cairo_text_renderer_test: input caret used a different font from its text");
+    return 1;
+  }
+  Style::setKumihimoEnabled(false);
+  if (!sameMetrics(baseText, renderer.measure(1.0F, "iiiiWWWW", 18.0F))) {
+    std::println(stderr, "cairo_text_renderer_test: clearing the material did not restore configured typography");
+    return 1;
+  }
+  renderer.setFontFamily("sans-serif");
 
   if (const int rc = scaleKeyedCacheCase(renderer); rc != 0) {
     return rc;

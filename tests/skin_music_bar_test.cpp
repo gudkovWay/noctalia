@@ -2,6 +2,7 @@
 #include "scripting/plugin_registry.h"
 #include "shell/panel/panel_manager.h"
 #include "shell/skins/skin_service.h"
+#include "ui/palette.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -45,6 +46,24 @@ int main(int argc, char** argv) {
         R"({"schema_version":1,"target":"noctalia","variant_id":"11111111111111111111111111111111","content_id":"2222222222222222222222222222222222222222222222222222222222222222","name":"Music bar","family":"kumihimo","topology":"hanging-tags","density":"comfortable","preview_path":"/tmp/music-bar-preview.webp","colors":{"surface":"#241c1d","surface_variant":"#302326","text":"#e7d7bc","muted":"#b5a38f","accent":"#c28c59","outline":"#70514b"}})";
     const auto applied = nlohmann::json::parse(skin.applyJson(recipe));
     check(applied.value("ok", false), "native recipe apply failed");
+    check(
+        Style::kumihimoEnabled() && !Style::stagecraftEnabled(),
+        "validated recipe did not select its own native geometry"
+    );
+    const Palette underlying = basePalette();
+    check(
+        colorForRole(ColorRole::Surface) == rgba(36.0F / 255.0F, 28.0F / 255.0F, 29.0F / 255.0F, 1.0F),
+        "native panels did not inherit the validated Kumihimo material"
+    );
+    check(
+        colorForRole(ColorRole::OnSurface) == rgba(231.0F / 255.0F, 215.0F / 255.0F, 188.0F / 255.0F, 1.0F),
+        "native text did not inherit the parchment role"
+    );
+    check(colorForRole(ColorRole::Error) == underlying.error, "presentation overwrote operational error semantics");
+    Palette nextBase = underlying;
+    nextBase.surface = rgba(0.07F, 0.10F, 0.16F, 1.0F);
+    setPalette(nextBase);
+    check(colorForRole(ColorRole::Surface) != nextBase.surface, "a base theme update displaced the active material");
     const auto bar = [&]() -> const BarConfig* {
       const auto& bars = config.config().bars;
       const auto it = std::ranges::find(bars, "skin-runtime-status", &BarConfig::name);
@@ -104,6 +123,9 @@ int main(int argc, char** argv) {
     check(nlohmann::json::parse(skin.clearJson()).value("ok", false), "native recipe clear failed");
     check(bar() == nullptr, "clear left behind the old empty center as foreign content");
     check(!config.hasOverride({"bar", "default", "enabled"}), "clear did not restore default bar ownership");
+    check(colorForRole(ColorRole::Surface) == nextBase.surface, "clear did not restore the latest underlying theme");
+    check(!Style::stagecraftEnabled(), "clear left a structural profile active");
+    check(!Style::kumihimoEnabled(), "clear left the Kumihimo geometry active");
   }
   std::filesystem::remove_all(root);
   return failures == 0 ? 0 : 1;

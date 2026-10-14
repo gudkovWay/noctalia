@@ -292,6 +292,7 @@ private:
   std::uint64_t m_destroyGeneration = 0; // invalidates stale deferred destroyPanel calls
   Signal<>::ScopedConnection m_paletteConn;
   bool m_appliedStagecraft = false;
+  bool m_appliedKumihimo = false;
   // Set on a Stagecraft toggle; consumed by prepareFrame to rebuild the scene in place
   // under a current render context.
   bool m_pendingStagecraftRebuild = false;

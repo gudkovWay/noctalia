@@ -42,12 +42,18 @@ namespace shell::panel_surface {
   }
 
   [[nodiscard]] inline float backgroundOpacity(const ConfigService* configService) noexcept {
+    if (Style::kumihimoEnabled()) {
+      return 1.0F;
+    }
     const auto mode =
         configService != nullptr ? configService->config().shell.panel.transparencyMode : PanelTransparencyMode::Solid;
     return detachedPanelBackgroundOpacityForTransparencyMode(mode);
   }
 
   [[nodiscard]] inline float cardOpacity(const ConfigService* configService, float panelBackgroundOpacity) noexcept {
+    if (Style::kumihimoEnabled()) {
+      return 1.0F;
+    }
     const auto mode =
         configService != nullptr ? configService->config().shell.panel.transparencyMode : PanelTransparencyMode::Solid;
     return panelCardOpacityForTransparencyMode(mode, panelBackgroundOpacity);

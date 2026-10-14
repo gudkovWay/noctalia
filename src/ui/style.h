@@ -111,6 +111,12 @@ namespace Style {
   void setStagecraftEnabled(bool enabled);
   [[nodiscard]] CornerShapes presentationCorners(CornerShapes normal = {}) noexcept;
 
+  // Validated Kumihimo recipe: rounded panels, quiet cards and outlined navigation.
+  // Process-only, like Stagecraft; clearing restores the user's underlying style.
+  [[nodiscard]] bool kumihimoEnabled() noexcept;
+  void setKumihimoEnabled(bool enabled);
+  [[nodiscard]] RectMaterial panelMaterial() noexcept;
+
   [[nodiscard]] bool inputBordersEnabled() noexcept;
   void setInputBordersEnabled(bool enabled);
   Signal<>& inputBordersChanged();

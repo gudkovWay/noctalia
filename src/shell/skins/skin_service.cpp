@@ -2048,15 +2048,29 @@ namespace {
 namespace noctalia::shell::skins {
 
   void SkinService::applyPresentationProfile(const std::optional<SkinRecipe>& recipe) {
-    // Stagecraft geometry is a shape choice only: it never owns the palette. The base
-    // wallpaper palette stays live underneath, and palette changes from the wallpaper
-    // pipeline keep propagating.
     const bool stagecraft = recipe.has_value() && recipe->family == "stagecraft";
-    // No active recipe either: restore the latest underlying palette so the ui core
-    // keeps the base theme flag, and a later clear shows the theme's own latest state,
-    // not a stale snapshot.
-    setPresentationPalette(std::nullopt);
+    const bool kumihimo = recipe.has_value() && recipe->family == "kumihimo";
     Style::setStagecraftEnabled(stagecraft);
+    Style::setKumihimoEnabled(kumihimo);
+    if (!kumihimo) {
+      setPresentationPalette(std::nullopt);
+      return;
+    }
+    // Inert, validated recipe colors are presentation only. ThemeService continues
+    // updating the underlying palette; no templates, GSettings or config writes.
+    Palette material = basePalette();
+    material.surface = hex(recipe->colorSurface);
+    material.surfaceVariant = hex(recipe->colorSurfaceVariant);
+    material.onSurface = hex(recipe->colorText);
+    material.onSurfaceVariant = hex(recipe->colorMuted);
+    material.primary = hex(recipe->colorAccent);
+    material.onPrimary = readableTextColorForBackground(material.primary);
+    material.secondary = material.onSurfaceVariant;
+    material.onSecondary = readableTextColorForBackground(material.secondary);
+    material.outline = hex(recipe->colorOutline);
+    material.hover = lerpColor(material.surfaceVariant, material.primary, 0.12F);
+    material.onHover = material.onSurface;
+    setPresentationPalette(material);
   }
 
 } // namespace noctalia::shell::skins

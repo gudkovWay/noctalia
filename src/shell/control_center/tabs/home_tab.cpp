@@ -66,7 +66,9 @@ namespace {
   constexpr std::int64_t kHomeTransientPositionRegressionDeltaUs = 5'000'000;
   constexpr int kHomeMediaArtLayoutPassLimit = 8;
 
-  float homeAvatarSize(float scale) { return Style::controlHeightLg * kHomeAvatarScale * scale; }
+  float homeAvatarSize(float scale) {
+    return (Style::kumihimoEnabled() ? 56.0F : Style::controlHeightLg * kHomeAvatarScale) * scale;
+  }
 
   // Width for the stacked (single-column) shortcuts so each tile keeps the same width it would have
   // as one cell of the standard 2-column grid, rather than stretching across the whole column.
@@ -128,7 +130,10 @@ namespace {
 
   void applyShortcutButtonStyle(Button& button, bool enabled, bool active, float fillOpacity) {
     const bool on = enabled && active;
-    button.setVariant(on ? ButtonVariant::Primary : ButtonVariant::Default);
+    button.setVariant(
+        Style::kumihimoEnabled() ? (on ? ButtonVariant::TabActive : ButtonVariant::Outline)
+                                 : (on ? ButtonVariant::Primary : ButtonVariant::Default)
+    );
     button.setSurfaceOpacity(on ? 1.0F : fillOpacity);
     button.setEnabled(enabled);
   }
@@ -209,8 +214,8 @@ std::unique_ptr<Flex> HomeTab::create() {
   auto userCard = ui::column({
       .out = &m_userCard,
       .justify = FlexJustify::Center,
-      .fillHeight = true,
-      .flexGrow = 1.0F,
+      .fillHeight = !Style::kumihimoEnabled(),
+      .flexGrow = Style::kumihimoEnabled() ? 0.0F : 1.0F,
       .configure = [scale, opacity = panelCardOpacity()](Flex& card) { applyHomeCardStyle(card, scale, opacity); },
   });
 
@@ -1101,6 +1106,16 @@ void HomeTab::ensureWallpaperThumbnail(const std::string& path, int targetPx) {
 
 void HomeTab::syncWallpaperBackground(Renderer& renderer) {
   if (m_wallpaperBg == nullptr || m_wallpaperPlaceholder == nullptr) {
+    return;
+  }
+  if (Style::kumihimoEnabled()) {
+    cancelCrispFade();
+    m_placeholderReady = false;
+    m_crispOpaque = false;
+    m_wallpaperBg->setVisible(false);
+    m_wallpaperPlaceholder->setVisible(false);
+    ensureWallpaperThumbnail({}, 0);
+    syncUserCardFill();
     return;
   }
 

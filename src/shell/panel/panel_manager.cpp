@@ -398,15 +398,18 @@ void PanelManager::initialize(CompositorPlatform& platform, ConfigService* confi
   m_clickShield.initialize(platform.wayland());
   m_persistentHost.initialize(platform, config, renderContext);
   m_appliedStagecraft = Style::stagecraftEnabled();
+  m_appliedKumihimo = Style::kumihimoEnabled();
   m_paletteConn = paletteChanged().connect([this] { onPaletteChanged(); });
 }
 
 void PanelManager::onPaletteChanged() {
   const bool stagecraft = Style::stagecraftEnabled();
-  if (stagecraft == m_appliedStagecraft) {
+  const bool kumihimo = Style::kumihimoEnabled();
+  if (stagecraft == m_appliedStagecraft && kumihimo == m_appliedKumihimo) {
     return;
   }
   m_appliedStagecraft = stagecraft;
+  m_appliedKumihimo = kumihimo;
   m_persistentHost.onStagecraftChanged();
   if (!isOpen() || m_surface == nullptr || m_activePanel == nullptr) {
     return;
@@ -2418,10 +2421,13 @@ void PanelManager::applyAttachedDecorationStyle() {
 
   if (m_bgNode != nullptr) {
     auto* bg = static_cast<Box*>(m_bgNode);
-    bg->setFill(colorSpecFromRole(ColorRole::Surface, m_attachedBackgroundOpacity));
+    bg->setFill(colorSpecFromRole(ColorRole::Surface, Style::kumihimoEnabled() ? 1.0F : m_attachedBackgroundOpacity));
     bg->setCornerShapes(attached_panel::cornerShapes(m_attachedBarPosition));
     bg->setLogicalInset(attached_panel::logicalInset(m_attachedBarPosition, radius));
     bg->setRadii(Radii{radius, radius, radius, radius});
+    if (Style::kumihimoEnabled()) {
+      bg->setBorder(colorSpecFromRole(ColorRole::Outline, 0.65F), Style::borderWidth);
+    }
   }
 
   if (m_panelShadowNode != nullptr && m_config != nullptr) {
@@ -2627,7 +2633,7 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
           bg->setRadii(Radii{radius, radius, radius, radius});
         }
       }
-      bg->setMaterial(Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None);
+      bg->setMaterial(Style::panelMaterial());
       m_bgNode = sceneParent->addChild(std::move(bg));
     }
 
@@ -2764,9 +2770,7 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
   if (m_bgNode != nullptr) {
     m_bgNode->setPosition(bgX, bgY);
     m_bgNode->setSize(bgW, bgH);
-    static_cast<Box*>(m_bgNode)->setMaterial(
-        Style::stagecraftEnabled() ? RectMaterial::Stagecraft : RectMaterial::None
-    );
+    static_cast<Box*>(m_bgNode)->setMaterial(Style::panelMaterial());
     if (!m_attachedToBar) {
       auto* bg = static_cast<Box*>(m_bgNode);
       bg->setCornerShapes(Style::presentationCorners(CornerShapes{}));
@@ -2811,8 +2815,9 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
   }
 
   const float kPadding = hasDecoration ? m_activePanel->contentScale() * Style::panelPadding : 0.0F;
-  m_contentWidth = panelW - kPadding * 2.0F;
-  m_contentHeight = panelH - kPadding * 2.0F;
+  const float trimInset = hasDecoration && Style::kumihimoEnabled() ? 12.0F * m_activePanel->contentScale() : 0.0F;
+  m_contentWidth = std::max(0.0F, panelW - kPadding * 2.0F);
+  m_contentHeight = std::max(0.0F, panelH - kPadding * 2.0F - trimInset);
   {
     UiPhaseScope updatePhase(UiPhase::Update);
     m_activePanel->update(renderer);
@@ -2822,8 +2827,8 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
     m_activePanel->layout(renderer, m_contentWidth, m_contentHeight);
   }
   if (m_contentNode != nullptr) {
-    m_contentNode->setPosition(panelX + kPadding, panelY + kPadding);
-    m_contentNode->setSize(panelW - kPadding * 2.0F, panelH - kPadding * 2.0F);
+    m_contentNode->setPosition(panelX + kPadding, panelY + kPadding + trimInset);
+    m_contentNode->setSize(m_contentWidth, m_contentHeight);
   }
   applyPendingPanelFocus();
   if (m_pointerInside) {

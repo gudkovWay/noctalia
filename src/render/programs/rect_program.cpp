@@ -60,7 +60,7 @@ uniform vec2 u_shadow_exclusion_size;
 uniform vec4 u_shadow_exclusion_corner_shapes;
 uniform vec4 u_shadow_exclusion_logical_inset;
 uniform vec4 u_shadow_exclusion_radii;
-uniform int u_material; // 0 = plain fill/border, 1 = stagecraft structural relief
+uniform int u_material; // 0 = plain, 1 = Stagecraft relief, 2 = Kumihimo top braid
 varying vec2 v_pixel;
 
 float rounded_rect_distance(vec2 point, vec2 size, vec4 radii) {
@@ -332,6 +332,25 @@ void main() {
         fill_base = u_color;
     } else {
         fill_base = gradient_fill(gradient_pos);
+    }
+
+    if (u_material == 2 && local_point.y >= 3.0 && local_point.y <= 13.0
+        && local_point.x >= 8.0 && local_point.x <= u_rect_size.x - 8.0) {
+        // A shallow woven seam only on the outer panel, in the existing rect pass.
+        // Logical coordinates keep its density independent of output scaling.
+        float y = local_point.y - 8.0;
+        float strand_x = mod(local_point.x, 12.0) - 6.0;
+        float diagonal = min(abs(y - strand_x * 0.65), abs(y + strand_x * 0.65));
+        float braid = 1.0 - smoothstep(1.0, 2.0, diagonal);
+        float band = 1.0 - smoothstep(3.5, 4.5, abs(y));
+        vec3 cord = u_border_color.rgb * vec3(1.05, 0.68, 0.87);
+        vec3 raised = mix(cord, u_border_color.rgb, 0.25);
+        fill_base.rgb = mix(fill_base.rgb, mix(cord * 0.55, raised, braid), band * 0.85);
+        if (abs(local_point.x - u_rect_size.x * 0.5) <= 7.0) {
+            float ring = abs(length(vec2((local_point.x - u_rect_size.x * 0.5) * 0.72, y)) - 3.1);
+            float knot = 1.0 - smoothstep(0.65, 1.35, ring);
+            fill_base.rgb = mix(fill_base.rgb, raised, knot);
+        }
     }
 
     if (u_material == 1) {
@@ -664,7 +683,7 @@ void RectProgram::draw(
       m_shadowExclusionRadiiLocation, style.shadowExclusionRadius.tl, style.shadowExclusionRadius.tr,
       style.shadowExclusionRadius.br, style.shadowExclusionRadius.bl
   );
-  glUniform1i(m_materialLocation, style.material == RectMaterial::Stagecraft ? 1 : 0);
+  glUniform1i(m_materialLocation, static_cast<GLint>(style.material));
   glUniformMatrix3fv(m_transformLocation, 1, GL_FALSE, quadTransform.m.data());
   const auto posAttr = static_cast<GLuint>(m_positionLocation);
   glVertexAttribPointer(posAttr, 2, GL_FLOAT, GL_FALSE, 0, vertices.data());

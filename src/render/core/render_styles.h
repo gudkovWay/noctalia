@@ -93,6 +93,7 @@ constexpr bool operator==(const ImageScrim& lhs, const ImageScrim& rhs) noexcept
 enum class RectMaterial : std::uint8_t {
   None,
   Stagecraft,
+  Kumihimo,
 };
 
 struct RoundedRectStyle {

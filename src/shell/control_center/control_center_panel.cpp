@@ -78,6 +78,9 @@ ControlCenterPanel::ControlCenterPanel(const ControlCenterServices& services) {
 float ControlCenterPanel::preferredWidth() const {
   const float fullSize = m_config != nullptr ? static_cast<float>(m_config->config().controlCenter.width)
                                              : static_cast<float>(ControlCenterConfig::kDefaultWidth);
+  if (Style::kumihimoEnabled()) {
+    return std::max(fullSize, 840.0F) * m_contentScale;
+  }
   switch (sidebarModeForOpen(pendingOpenContext())) {
   case ControlCenterSidebarMode::Full:
     return fullSize * m_contentScale;
@@ -121,12 +124,18 @@ void ControlCenterPanel::create() {
         .out = &m_sidebar,
         .align = FlexAlign::Start,
         .gap = 0.0F,
-        .padding = Style::spaceMd * scale,
+        .padding = (Style::kumihimoEnabled() ? Style::spaceXs : Style::spaceMd) * scale,
         .fillWidth = false,
         .fillHeight = true,
         .configure = [this, scale](Flex& column) {
-          column.setFill(colorSpecFromRole(ColorRole::SurfaceVariant, panelCardOpacity()));
-          column.setRadius(Style::scaledRadiusXl(scale));
+          if (Style::kumihimoEnabled()) {
+            column.clearFill();
+            column.clearBorder();
+          } else {
+            column.setFill(colorSpecFromRole(ColorRole::SurfaceVariant, panelCardOpacity()));
+            column.setRadius(Style::scaledRadiusXl(scale));
+            column.setPresentationChrome(true);
+          }
         },
     });
 
@@ -194,11 +203,11 @@ void ControlCenterPanel::create() {
               .paddingV = Style::spaceXs * scale,
               .paddingH = (m_compact ? Style::spaceXs : Style::spaceSm) * scale,
               .gap = Style::spaceSm * scale,
-              .radius = Style::scaledRadiusLg(scale),
+              .radius = Style::kumihimoEnabled() ? Style::scaledRadiusMd(scale) : Style::scaledRadiusLg(scale),
               .onClick = onClick,
               .configure = [this, scale](Button& button) {
                 if (button.label() != nullptr) {
-                  button.label()->setFontWeight(FontWeight::Bold);
+                  button.label()->setFontWeight(Style::kumihimoEnabled() ? FontWeight::Normal : FontWeight::Bold);
                   button.label()->setFontSize(Style::fontSizeBody * scale);
                 }
                 wireSidebarScroll(button.inputArea());
@@ -250,9 +259,9 @@ void ControlCenterPanel::create() {
       ui::label({
           .out = &m_contentTitle,
           .text = i18n::tr("control-center.tabs.home"),
-          .fontSize = Style::fontSizeTitle * scale,
-          .fontWeight = FontWeight::Bold,
-          .color = colorSpecFromRole(ColorRole::Primary),
+          .fontSize = (Style::kumihimoEnabled() ? Style::fontSizeHeader : Style::fontSizeTitle) * scale,
+          .fontWeight = Style::kumihimoEnabled() ? FontWeight::Medium : FontWeight::Bold,
+          .color = colorSpecFromRole(Style::kumihimoEnabled() ? ColorRole::OnSurface : ColorRole::Primary),
           .flexGrow = 1.0F,
       })
   );
@@ -321,7 +330,11 @@ void ControlCenterPanel::onPanelCardOpacityChanged(float opacity) {
     }
   }
   if (m_sidebar != nullptr) {
-    m_sidebar->setFill(colorSpecFromRole(ColorRole::SurfaceVariant, opacity));
+    if (Style::kumihimoEnabled()) {
+      m_sidebar->clearFill();
+    } else {
+      m_sidebar->setFill(colorSpecFromRole(ColorRole::SurfaceVariant, opacity));
+    }
   }
 }
 
@@ -848,6 +861,9 @@ bool ControlCenterPanel::isDirectSectionOpenContext(std::string_view context) co
 }
 
 ControlCenterSidebarMode ControlCenterPanel::sidebarModeForOpen(std::string_view context) const {
+  if (Style::kumihimoEnabled()) {
+    return ControlCenterSidebarMode::Full;
+  }
   if (m_config == nullptr) {
     return ControlCenterSidebarMode::Compact;
   }
@@ -882,7 +898,10 @@ void ControlCenterPanel::layoutFullSidebarWidth(Renderer& renderer) {
     if (!isTabVisible(meta.id)) {
       continue;
     }
-    const TextMetrics text = renderer.measureText(i18n::tr(meta.titleKey), fontSize, FontWeight::Bold);
+    const TextMetrics text = renderer.measureText(
+        i18n::tr(meta.titleKey), fontSize, Style::kumihimoEnabled() ? FontWeight::Normal : FontWeight::Bold, 0.0F, 1,
+        TextAlign::Start, Style::kumihimoEnabled() ? "Noto Sans" : ""
+    );
     maxTabWidth = std::max(maxTabWidth, paddingH + glyphW + gap + text.width);
   }
 

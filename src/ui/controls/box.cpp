@@ -186,7 +186,7 @@ void Box::setPanelStyle(bool showBorder) {
   m_style.fillMode = FillMode::Solid;
   m_style.corners = {};
   m_style.logicalInset = {};
-  m_style.radius = Style::scaledRadiusXl();
+  m_style.radius = Style::kumihimoEnabled() ? Style::scaledRadius(10.0F) : Style::scaledRadiusXl();
   m_style.softness = 1.0F;
   enablePresentationChrome({});
 }
@@ -199,11 +199,11 @@ void Box::setCardStyle(float scale, float fillOpacity, bool showBorder) {
   const CornerShapes normal = presentationNormalShapes();
   setFill(colorSpecFromRole(ColorRole::SurfaceVariant, fillOpacity));
   if (showBorder) {
-    setBorder(colorSpecFromRole(ColorRole::Outline), Style::borderWidth);
+    setBorder(colorSpecFromRole(ColorRole::Outline, Style::kumihimoEnabled() ? 0.5F : 1.0F), Style::borderWidth);
   } else {
     clearBorder();
   }
-  setRadius(Style::scaledRadiusXl(scale));
+  setRadius(Style::kumihimoEnabled() ? Style::scaledRadiusMd(scale) : Style::scaledRadiusXl(scale));
   enablePresentationChrome(normal);
 }
 

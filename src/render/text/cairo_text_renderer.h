@@ -138,6 +138,7 @@ private:
     std::uint32_t sizeBits = 0;
     std::uint32_t scaleBits = 0;
     FontWeight fontWeight = FontWeight::Normal;
+    bool kumihimo = false;
 
     bool operator==(const FontMetricsKey& other) const noexcept;
   };
@@ -207,6 +208,7 @@ private:
 
   bool m_fontConfigInitialized = false;
   std::uint64_t m_syncedFontGeneration = 0;
+  bool m_syncedKumihimo = false;
   std::string m_fontFamily = "sans-serif";
   bool m_baseDirRtl = false;
 
