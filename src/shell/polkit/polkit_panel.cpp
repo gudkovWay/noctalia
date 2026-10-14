@@ -86,7 +86,6 @@ PanelPlacement PolkitPanel::panelPlacement() const noexcept {
 float PolkitPanel::preferredHeight() const {
   const float scale = contentScale();
   const float bodyLine = Style::fontSizeBody * scale * 1.35F;
-  const float titleLine = Style::fontSizeTitle * scale * 1.35F;
   const float captionLine = Style::fontSizeCaption * scale * 1.35F;
   const float iconSize = scaled(48.0F);
   const float pad = Style::spaceLg * scale;
@@ -95,12 +94,9 @@ float PolkitPanel::preferredHeight() const {
 
   const float contentW = preferredWidth() - scaled(Style::panelPadding) * 2.0F;
   const float innerW = std::max(1.0F, contentW - pad * 2.0F);
-  const float messageW = std::max(1.0F, innerW - iconSize - gapMd);
   const float avgChar = Style::fontSizeBody * scale * 0.55F;
-  const int messageChars = std::max(1, static_cast<int>(messageW / avgChar));
   const int promptChars = std::max(1, static_cast<int>(innerW / avgChar));
 
-  int messageLines = 1;
   int promptLines = 1;
   int supplementaryLines = 0;
   bool needsInput = false;
@@ -108,10 +104,6 @@ float PolkitPanel::preferredHeight() const {
   if (PolkitAgent* agent = m_agentProvider != nullptr ? m_agentProvider() : nullptr;
       agent != nullptr && agent->hasPendingRequest()) {
     needsInput = agent->isResponseRequired();
-    const PolkitRequest request = agent->pendingRequest();
-    const std::string message = wrapLongRuns(request.message.empty() ? request.actionId : request.message);
-    messageLines = std::max(1, wrappedLineCount(message, messageChars, 6));
-
     const std::string supplementaryRaw = agent->supplementaryMessage();
     const bool supplementaryError = agent->supplementaryIsError();
     std::string promptText = wrapLongRuns(agent->inputPrompt());
@@ -130,7 +122,9 @@ float PolkitPanel::preferredHeight() const {
     supplementaryLines = wrappedLineCount(supplementaryText, promptChars, 4);
   }
 
-  const float top = std::max(iconSize, titleLine + static_cast<float>(messageLines) * bodyLine);
+  // Description has its own bounded viewport; authentication controls never move
+  // off the surface when an application supplies a long or multiline request.
+  const float top = iconSize + gapMd + scaled(148.0F);
   float bottom = static_cast<float>(promptLines) * bodyLine + gapSm;
   if (needsInput) {
     bottom += Style::controlHeight * scale + gapSm;
@@ -140,7 +134,8 @@ float PolkitPanel::preferredHeight() const {
   }
   bottom += Style::controlHeight * scale;
 
-  return std::ceil(pad * 2.0F + top + gapMd + bottom + scaled(Style::panelPadding) * 2.0F + gapSm);
+  const float trimInset = Style::kumihimoEnabled() ? scaled(12.0F) : 0.0F;
+  return std::ceil(pad * 2.0F + top + gapMd + bottom + scaled(Style::panelPadding) * 2.0F + gapSm + trimInset);
 }
 
 void PolkitPanel::create() {
@@ -186,17 +181,35 @@ void PolkitPanel::create() {
               .text = i18n::tr("auth.polkit.title"),
               .fontSize = Style::fontSizeTitle * scale,
               .fontWeight = FontWeight::Bold,
-              .color = colorSpecFromRole(ColorRole::Primary),
-          }),
-          ui::label({
-              .out = &m_messageLabel,
-              .fontSize = Style::fontSizeBody * scale,
               .color = colorSpecFromRole(ColorRole::OnSurface),
-              .maxLines = 6,
           })
       )
   );
   root->addChild(std::move(topContent));
+
+  auto description = ui::scrollView({
+      .out = &m_descriptionScroll,
+      .state = &m_descriptionScrollState,
+      .contentScale = scale,
+      .scrollbarVisible = true,
+      .viewportPaddingH = Style::spaceMd * scale,
+      .viewportPaddingV = Style::spaceMd * scale,
+      .fill = colorSpecFromRole(ColorRole::SurfaceVariant),
+      .radius = Style::scaledRadiusMd(scale),
+      .fillWidth = true,
+      .flexGrow = 1.0F,
+  });
+  description->setBorder(colorSpecFromRole(ColorRole::Outline, 0.5F), Style::borderWidth);
+  description->content()->setAlign(FlexAlign::Stretch);
+  description->content()->addChild(
+      ui::label({
+          .out = &m_messageLabel,
+          .fontSize = Style::fontSizeBody * scale,
+          .color = colorSpecFromRole(ColorRole::OnSurface),
+          .maxLines = 0,
+      })
+  );
+  root->addChild(std::move(description));
 
   auto bottomContent = ui::column(
       {.align = FlexAlign::Stretch, .gap = Style::spaceSm * scale},
@@ -290,6 +303,8 @@ void PolkitPanel::onClose() {
   m_focusArea = nullptr;
   m_titleLabel = nullptr;
   m_messageLabel = nullptr;
+  m_descriptionScroll = nullptr;
+  m_descriptionScrollState = {};
   m_promptLabel = nullptr;
   m_supplementaryLabel = nullptr;
   m_input = nullptr;

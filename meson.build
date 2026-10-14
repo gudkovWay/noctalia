@@ -1270,6 +1270,7 @@ if build_tests
     'scrollbar_geometry',
     'secret_store',
     'skin_music_bar',
+    'polkit_panel_layout',
     'security_primitives',
     'state_store',
     'string_utils',
