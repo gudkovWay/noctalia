@@ -1220,6 +1220,7 @@ if build_tests
     'greeter_appearance_sync',
     'grid_item_cursor',
     'hook_manager',
+    'home_profile_layout',
     'hyprland_workspace_backend',
     'i18n_language_tag',
     'i18n_supported_languages',

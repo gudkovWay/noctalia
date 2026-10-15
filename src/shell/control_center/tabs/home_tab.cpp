@@ -326,7 +326,6 @@ std::unique_ptr<Flex> HomeTab::create() {
            .gap = Style::spaceXs * 0.5F * scale,
            .minHeight = avatarSize,
            .width = 0.0F,
-           .height = avatarSize,
            .flexGrow = 1.0F},
           ui::label({
               .text = displayName,
@@ -709,7 +708,9 @@ void HomeTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight)
   if (m_userAvatar != nullptr && m_userMain != nullptr) {
     const float userMainHeight = std::max(1.0F, m_userAvatar->height());
     m_userMain->setMinHeight(userMainHeight);
-    m_userMain->setSize(m_userMain->width(), userMainHeight);
+    if (!Style::kumihimoEnabled()) {
+      m_userMain->setSize(m_userMain->width(), userMainHeight);
+    }
   }
   if (m_shortcutsGrid != nullptr && !m_shortcutPads.empty()) {
     const float scale = contentScale();
@@ -731,7 +732,12 @@ void HomeTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight)
     // user card (which content-overflows). Reserve the user card's natural height and cap the
     // square side to fit; cap the grid width to keep tiles square, handing the freed width to
     // the media/clock column.
-    const float userCardReserve = homeAvatarSize(scale) + 2.0F * (Style::spaceSm + Style::spaceXs) * scale;
+    float userCardReserve = homeAvatarSize(scale) + 2.0F * (Style::spaceSm + Style::spaceXs) * scale;
+    if (Style::kumihimoEnabled() && m_userCard != nullptr) {
+      LayoutConstraints userCardConstraints;
+      userCardConstraints.setExactWidth(contentWidth);
+      userCardReserve = m_userCard->measure(renderer, userCardConstraints).height;
+    }
     const float rootGap = m_rootLayout->gap();
     const float availForGrid = std::max(1.0F, bodyHeight - userCardReserve - rootGap);
     const float maxCellSide = std::max(
@@ -838,7 +844,7 @@ void HomeTab::doLayout(Renderer& renderer, float contentWidth, float bodyHeight)
     }
   }
 
-  if (m_userAvatar != nullptr && m_userMain != nullptr) {
+  if (m_userAvatar != nullptr && m_userMain != nullptr && !Style::kumihimoEnabled()) {
     const float scale = contentScale();
     const float minAvatar = homeAvatarSize(scale);
     const float desiredAvatar = std::max(minAvatar, m_userMain->height());
