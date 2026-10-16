@@ -1179,6 +1179,7 @@ if build_tests
   )
 
   _cpp_test_names = [
+    'ai_cassette',
     'annotation_document',
     'annotation_raster',
     'animation_manager',
@@ -1339,6 +1340,8 @@ if build_tests
       test_args = [meson.project_source_root() / 'integrations']
     elif test_name == 'music_preview_widget'
       test_args = [meson.project_source_root() / 'integrations/skin-runtime']
+    elif test_name == 'ai_cassette'
+      test_args = [meson.project_source_root() / 'integrations/ai-triage']
     endif
     test(test_name, test_exe, args: test_args)
   endforeach
