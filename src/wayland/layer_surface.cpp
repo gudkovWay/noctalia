@@ -46,7 +46,10 @@ LayerShellLayer layerShellLayerFromConfig(std::string_view layer) {
   if (layer == "top") {
     return LayerShellLayer::Top;
   }
-  kLog.warn("invalid layer-shell layer '{}'; expected top or overlay", layer);
+  if (layer == "bottom") {
+    return LayerShellLayer::Bottom;
+  }
+  kLog.warn("invalid layer-shell layer '{}'; expected bottom, top or overlay", layer);
   return LayerShellLayer::Top;
 }
 
