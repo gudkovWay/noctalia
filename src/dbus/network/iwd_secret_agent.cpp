@@ -1,6 +1,7 @@
 #include "dbus/network/iwd_secret_agent.h"
 
 #include "core/log.h"
+#include "dbus/shared_service_policy.h"
 #include "dbus/system_bus.h"
 
 #include <optional>
@@ -77,7 +78,9 @@ struct IwdSecretAgent::Impl {
   }
 };
 
-IwdSecretAgent::IwdSecretAgent(SystemBus& bus) : m_impl(std::make_unique<Impl>(bus)) {
+IwdSecretAgent::IwdSecretAgent(SystemBus& bus) {
+  noctalia::dbus::requireGlobalRole("iwd secret agent");
+  m_impl = std::make_unique<Impl>(bus);
   m_impl->object = sdbus::createObject(bus.connection(), kAgentObjectPath);
 
   m_impl->object

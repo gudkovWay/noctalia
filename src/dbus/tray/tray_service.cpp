@@ -4,6 +4,7 @@
 #include "core/log.h"
 #include "core/timer_manager.h"
 #include "dbus/session_bus.h"
+#include "dbus/shared_service_policy.h"
 #include "util/string_utils.h"
 
 #include <algorithm>
@@ -593,7 +594,7 @@ void TrayService::startWithWatcherDetection() {
         }
       });
 
-  const bool useClientMode = externalWatcherHasOwner();
+  const bool useClientMode = !noctalia::instance::current().ownsGlobalServices() || externalWatcherHasOwner();
   if (useClientMode) {
     startAsWatcherClient();
   } else {
@@ -659,7 +660,7 @@ void TrayService::startAsWatcherOwner() {
       .forInterface(kWatcherInterface);
 
   try {
-    m_bus.connection().requestName(kWatcherBusName);
+    noctalia::dbus::acquireServiceName(m_bus.connection(), kWatcherBusName);
   } catch (const sdbus::Error& e) {
     // Only a genuine name race means another watcher owns the name now. Any other
     // failure such as a disconnected bus or a permission error must keep the

@@ -2,6 +2,7 @@
 
 #include "core/log.h"
 #include "dbus/session_bus.h"
+#include "dbus/shared_service_policy.h"
 #include "system/app_identity.h"
 #include "util/file_utils.h"
 #include "util/string_utils.h"
@@ -282,7 +283,7 @@ namespace compositors::kde {
     }
 
     try {
-      m_bus.connection().requestName(kBusName);
+      noctalia::dbus::acquireServiceName(m_bus.connection(), kBusName);
     } catch (const sdbus::Error& e) {
       kLog.warn("failed to claim {}: {}", std::string{kBusName}, e.getMessage());
       return;

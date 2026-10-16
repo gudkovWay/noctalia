@@ -17,6 +17,7 @@
 #include "ui/builders.h"
 #include "ui/palette.h"
 #include "ui/style.h"
+#include "util/file_utils.h"
 #include "util/string_utils.h"
 
 #include <algorithm>
@@ -106,6 +107,11 @@ namespace {
   constexpr int kExpandedMaxLines = 500;
 
   std::filesystem::path remoteNotificationIconCachePath(std::string_view url) {
+    if (noctalia::instance::current().isolated()) {
+      return std::filesystem::path(FileUtils::stateDir())
+          / "cache/notification-icons"
+          / (std::to_string(std::hash<std::string_view>{}(url)) + ".img");
+    }
     return std::filesystem::path("/tmp")
         / "noctalia-notification-icons"
         / (std::to_string(std::hash<std::string_view>{}(url)) + ".img");

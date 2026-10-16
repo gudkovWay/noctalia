@@ -2,6 +2,7 @@
 
 #include "core/log.h"
 #include "dbus/session_bus.h"
+#include "dbus/shared_service_policy.h"
 #include "notification/notification_manager.h"
 
 namespace {
@@ -22,7 +23,7 @@ namespace {
 } // namespace
 
 DebugService::DebugService(SessionBus& bus, NotificationManager& notifications) : m_notifications(notifications) {
-  bus.connection().requestName(kDebugBusName);
+  noctalia::dbus::acquireServiceName(bus.connection(), kDebugBusName);
   m_object = sdbus::createObject(bus.connection(), kDebugObjectPath);
 
   m_object

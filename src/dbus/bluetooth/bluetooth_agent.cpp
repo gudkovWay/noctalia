@@ -1,6 +1,7 @@
 #include "dbus/bluetooth/bluetooth_agent.h"
 
 #include "core/log.h"
+#include "dbus/shared_service_policy.h"
 #include "dbus/system_bus.h"
 
 #include <optional>
@@ -176,7 +177,9 @@ struct BluetoothAgent::Impl {
   }
 };
 
-BluetoothAgent::BluetoothAgent(SystemBus& bus) : m_impl(std::make_unique<Impl>(bus)) {
+BluetoothAgent::BluetoothAgent(SystemBus& bus) {
+  noctalia::dbus::requireGlobalRole("Bluetooth default agent");
+  m_impl = std::make_unique<Impl>(bus);
   m_impl->object = sdbus::createObject(bus.connection(), kAgentObjectPath);
 
   m_impl->object

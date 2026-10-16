@@ -13,6 +13,7 @@
 namespace noctalia::cli {
 
   inline constexpr std::array<std::string_view, 3> kCompletionShellChoices{"bash", "fish", "zsh"};
+  inline constexpr std::array<std::string_view, 2> kSessionRoleChoices{"primary", "secondary"};
   inline constexpr std::array kCompletionsPositionals{
       Positional{"shell", "Shell completion format", kCompletionShellChoices, true, false, false},
   };
@@ -33,6 +34,16 @@ namespace noctalia::cli {
   inline constexpr std::array kRootFlags{
       Flag{"--version", "-v", {}, "Show version information", {}, {}, false, false},
       Flag{"--daemon", "-d", {}, "Run in background", {}, {}, false, false},
+      Flag{
+          "--session-role",
+          {},
+          "role",
+          "Opt into isolated Wayland instances (or set NOCTALIA_SESSION_ROLE)",
+          kSessionRoleChoices,
+          {},
+          false,
+          false
+      },
   };
 
   inline constexpr std::array kRootSubcommands{

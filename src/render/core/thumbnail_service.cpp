@@ -30,6 +30,8 @@ namespace {
   constexpr std::string_view kThumbnailCacheVersion = "thumbnail-service-v3";
 
   std::filesystem::path thumbnailCacheDir() {
+    if (noctalia::instance::current().isolated())
+      return std::filesystem::path(FileUtils::stateDir()) / "cache/thumbnails";
     if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg != nullptr && xdg[0] != '\0') {
       return std::filesystem::path(xdg) / "noctalia" / "thumbnails";
     }

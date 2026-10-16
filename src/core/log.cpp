@@ -1,5 +1,7 @@
 #include "core/log.h"
 
+#include "util/file_utils.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -277,7 +279,9 @@ void initLogFile() {
   const char* home = std::getenv("HOME");
 
   std::string dir;
-  if (cacheHome != nullptr && cacheHome[0] != '\0') {
+  if (noctalia::instance::current().isolated()) {
+    dir = FileUtils::stateDir() + "/logs";
+  } else if (cacheHome != nullptr && cacheHome[0] != '\0') {
     dir = std::string(cacheHome) + "/noctalia";
   } else if (home != nullptr && home[0] != '\0') {
     dir = std::string(home) + "/.cache/noctalia";

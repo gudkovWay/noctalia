@@ -434,6 +434,11 @@ namespace noctalia::theme {
       builtinConfigPathStorage = builtinTemplateConfigPath().string();
       configPath = builtinConfigPathStorage.c_str();
     }
+    const bool hasTemplateWork = !renderSpecs.empty() || configPath != nullptr;
+    if (hasTemplateWork && !instance::current().ownsGlobalServices()) {
+      std::println(stderr, "error: secondary instances do not apply shared theme templates");
+      return 1;
+    }
 
     if (!imagePath && !themeJsonPath) {
       std::println(stderr, "error: theme requires an image path or --theme-json (try: noctalia theme --help)");
@@ -469,7 +474,6 @@ namespace noctalia::theme {
     }
 
     const std::string json = toJson(palette, *schemeOpt, variant);
-    const bool hasTemplateWork = !renderSpecs.empty() || configPath != nullptr;
     if (outPath) {
       std::ofstream f(outPath);
       if (!f) {

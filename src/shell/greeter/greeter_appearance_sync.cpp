@@ -961,6 +961,10 @@ namespace greeter {
       const ConfigService& configService, std::string_view resolvedThemeMode, SyncCompletion onComplete,
       const CompositorPlatform* platform, const bool logindOnSystemBus
   ) {
+    if (!noctalia::instance::current().ownsGlobalServices()) {
+      kLog.warn("greeter sync refused for secondary instance");
+      return GreeterSyncLaunch::Failed;
+    }
     bool expected = false;
     if (!g_greeterSyncInProgress.compare_exchange_strong(
             expected, true, std::memory_order_acquire, std::memory_order_relaxed
@@ -1133,6 +1137,9 @@ namespace greeter {
         noctalia::cli::msg::greeterSync,
         [&config, resolvedThemeMode = std::move(resolvedThemeMode), platform,
          logindOnSystemBus = std::move(logindOnSystemBus)](const std::string& args) -> std::string {
+          if (!noctalia::instance::current().ownsGlobalServices()) {
+            return "error: greeter sync belongs to the primary instance\n";
+          }
           if (!StringUtils::trim(args).empty()) {
             return "error: usage: greeter-sync\n";
           }

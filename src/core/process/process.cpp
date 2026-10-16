@@ -1,5 +1,6 @@
 #include "core/process/process.h"
 
+#include "app/instance_context.h"
 #include "core/log.h"
 #include "util/string_utils.h"
 
@@ -115,6 +116,41 @@ namespace {
         ::unsetenv(item.name.c_str());
       }
     }
+  }
+
+  // Prepare before fork, then apply only in the child. A plain `noctalia msg`
+  // must use the running instance's CLI, not an upstream binary earlier on
+  // PATH. Caller PATH overrides are retained after our own binary directory.
+  [[nodiscard]] bool
+  resolveInstanceChildPath(const std::vector<process::EnvOverride>& env, std::optional<std::string>& result) {
+    if (!noctalia::instance::current().isolated())
+      return true;
+    const char* binary = std::getenv("NOCTALIA_BINARY");
+    if (binary == nullptr || binary[0] != '/')
+      return false;
+    const std::string_view binaryPath(binary);
+    const auto slash = binaryPath.find_last_of('/');
+    if (slash == std::string_view::npos || slash + 1 == binaryPath.size())
+      return false;
+    const auto directory = binaryPath.substr(0, slash == 0 ? 1 : slash);
+    if (directory.contains(':'))
+      return false; // not representable as one PATH entry
+    const char* inherited = std::getenv("PATH");
+    std::optional<std::string_view> path =
+        inherited != nullptr ? std::optional<std::string_view>{inherited} : std::nullopt;
+    for (const auto& item : env) {
+      if (item.name == "PATH") {
+        path = item.value ? std::optional<std::string_view>{*item.value} : std::nullopt;
+      }
+    }
+    const std::string_view remainder = path.value_or("/bin:/usr/bin");
+    std::string resolved;
+    resolved.reserve(directory.size() + 1 + remainder.size());
+    resolved.append(directory);
+    resolved += ':';
+    resolved.append(remainder);
+    result = std::move(resolved);
+    return true;
   }
 
   [[nodiscard]] bool isSafeFlatpakAppId(std::string_view appId) {
@@ -376,6 +412,10 @@ namespace {
     if (args.empty() || args.front().empty()) {
       return {-1, {}, {}};
     }
+    std::optional<std::string> childPath;
+    if (!resolveInstanceChildPath(options.env, childPath)) {
+      return {-1, {}, "multi-session subprocess requires valid NOCTALIA_BINARY context"};
+    }
 
     int outPipe[2] = {-1, -1};
     int errPipe[2] = {-1, -1};
@@ -406,6 +446,8 @@ namespace {
       closeFd(errPipe[1]);
 
       applyEnvOverrides(options.env);
+      if (childPath && ::setenv("PATH", childPath->c_str(), 1) != 0)
+        ::_exit(126);
       std::vector<char*> argv = makeArgv(args);
 
       ::execvp(argv[0], argv.data());
@@ -516,6 +558,11 @@ namespace {
       const std::vector<std::string>& args, pid_t* reportPid, const std::string& activationToken,
       const std::string& workingDir = {}
   ) {
+    std::optional<std::string> childPath;
+    if (!resolveInstanceChildPath({}, childPath)) {
+      kLog.warn("multi-session subprocess requires valid NOCTALIA_BINARY context");
+      return false;
+    }
     int reportPipe[2] = {-1, -1};
     int execStatusPipe[2] = {-1, -1};
     const bool needPid = reportPid != nullptr;
@@ -639,6 +686,12 @@ namespace {
       ::setenv("DESKTOP_STARTUP_ID", activationToken.c_str(), 1);
     }
 
+    if (childPath && ::setenv("PATH", childPath->c_str(), 1) != 0) {
+      const int error = errno;
+      writePipeOrIgnore(execStatusPipe[1], &error, sizeof(error));
+      closeFd(execStatusPipe[1]);
+      ::_exit(126);
+    }
     attachStdioToDevNull();
 
     std::vector<char*> argv = makeArgv(args);

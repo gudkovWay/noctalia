@@ -63,6 +63,7 @@ class MprisService {
 public:
   explicit MprisService(SessionBus& bus);
 
+  [[nodiscard]] bool hasControlApi() const noexcept { return m_controlObject != nullptr; }
   [[nodiscard]] const std::unordered_map<std::string, MprisPlayerInfo>& players() const noexcept;
   [[nodiscard]] std::vector<MprisPlayerInfo> listPlayers() const;
   [[nodiscard]] std::optional<MprisPlayerInfo> activePlayer() const;

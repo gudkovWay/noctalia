@@ -24,6 +24,8 @@ namespace {
   constexpr int kAvatarSourceWarnSize = 4 * kAccountsAvatarMaxSize;
 
   [[nodiscard]] std::filesystem::path avatarCacheDirectory() {
+    if (noctalia::instance::current().isolated())
+      return std::filesystem::path(FileUtils::stateDir()) / "cache/avatar";
     const char* cacheHome = std::getenv("XDG_CACHE_HOME");
     const char* home = std::getenv("HOME");
     if (cacheHome != nullptr && cacheHome[0] != '\0') {

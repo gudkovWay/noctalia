@@ -1,6 +1,7 @@
 #include "dbus/network/network_secret_agent.h"
 
 #include "core/log.h"
+#include "dbus/shared_service_policy.h"
 #include "dbus/system_bus.h"
 
 #include <cstdint>
@@ -164,7 +165,9 @@ struct NetworkSecretAgent::Impl {
   }
 };
 
-NetworkSecretAgent::NetworkSecretAgent(SystemBus& bus) : m_impl(std::make_unique<Impl>(bus)) {
+NetworkSecretAgent::NetworkSecretAgent(SystemBus& bus) {
+  noctalia::dbus::requireGlobalRole("NetworkManager secret agent");
+  m_impl = std::make_unique<Impl>(bus);
   m_impl->object = sdbus::createObject(bus.connection(), kAgentObjectPath);
 
   m_impl->object

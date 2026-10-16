@@ -16,6 +16,7 @@
 #include "net/url_open.h"
 #include "notification/notification_manager.h"
 #include "security/secret_store.h"
+#include "util/file_utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -1333,6 +1334,8 @@ CalendarService::CredentialOperationResult CalendarService::operationResult(secu
 }
 
 std::filesystem::path CalendarService::cacheFilePath() {
+  if (noctalia::instance::current().isolated())
+    return std::filesystem::path(FileUtils::stateDir()) / "cache/calendar/events.enc";
   const char* xdgCache = std::getenv("XDG_CACHE_HOME");
   std::filesystem::path base;
   if (xdgCache != nullptr && xdgCache[0] != '\0') {

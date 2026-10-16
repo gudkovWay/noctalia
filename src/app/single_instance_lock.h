@@ -22,9 +22,9 @@ public:
   SingleInstanceLock& operator=(const SingleInstanceLock&) = delete;
 
   // Attempts to acquire the lock. Returns true if we now hold it (we are the only
-  // instance) and false if another live instance already holds it. If the lock
-  // file cannot be opened at all (e.g. an unwritable runtime dir), startup is
-  // allowed to proceed unguarded rather than bricking the shell — this is logged.
+  // instance) and false if another live instance already holds it.
+  // Legacy mode allows an unusable lock file to degrade with a warning.
+  // Opt-in mode fails closed and also holds the safe legacy-display lock.
   bool tryAcquire();
 
   [[nodiscard]] bool held() const noexcept { return m_fd >= 0; }
@@ -35,5 +35,6 @@ private:
   static std::string resolveLockPath();
 
   int m_fd = -1;
+  int m_compatFd = -1;
   std::string m_path;
 };

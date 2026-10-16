@@ -33,6 +33,7 @@
 #include "dbus/secret/secret_collection_probe.h"
 #include "dbus/session_bus.h"
 #include "dbus/session_bus_poll_source.h"
+#include "dbus/shared_service_policy.h"
 #include "dbus/system_bus.h"
 #include "dbus/system_bus_poll_source.h"
 #include "dbus/tray/tray_service.h"
@@ -125,7 +126,7 @@ namespace {
   }
 
   void syncGSettingsColorScheme(std::string_view mode) {
-    if (mode.empty()) {
+    if (mode.empty() || !noctalia::instance::current().ownsGlobalServices()) {
       return;
     }
     const std::string pref = mode == "light" ? "prefer-light" : "prefer-dark";
@@ -158,7 +159,7 @@ void Application::scheduleNotificationShellRefresh() {
 }
 
 void Application::syncNotificationDaemon() {
-  if (m_bus == nullptr) {
+  if (m_bus == nullptr || !noctalia::instance::current().ownsGlobalServices()) {
     m_notificationPollSource.setDbusService(nullptr);
     m_notificationDbus.reset();
     m_notificationDaemonEnabled.reset();
@@ -200,7 +201,7 @@ void Application::syncNotificationDaemon() {
     m_notificationDaemonInitFailed = false;
     kLog.info("listening on org.freedesktop.Notifications");
   } catch (const std::exception& ownerError) {
-    if (compositors::isKde()) {
+    if (compositors::isKde() && !noctalia::instance::current().isolated()) {
       try {
         m_notificationDbus = std::make_unique<KdeNotificationClient>(*m_bus, m_notificationManager);
         m_notificationPollSource.setDbusService(m_notificationDbus.get());
@@ -230,7 +231,7 @@ void Application::syncNotificationDaemon() {
 }
 
 void Application::installNotificationBusNameWatch() {
-  if (m_notificationBusNameWatchInstalled || m_bus == nullptr) {
+  if (m_notificationBusNameWatchInstalled || m_bus == nullptr || !noctalia::instance::current().ownsGlobalServices()) {
     return;
   }
 
@@ -383,7 +384,7 @@ bool Application::likelySupportsInSessionPolkit() const noexcept {
 
 void Application::syncPolkitAgent() {
   m_polkitIdleCloseTimer.stop();
-  if (m_systemBus == nullptr) {
+  if (m_systemBus == nullptr || !noctalia::instance::current().ownsGlobalServices()) {
     m_polkitPollSource.reset();
     m_polkitAgent.reset();
     return;
@@ -584,12 +585,14 @@ void Application::initStyleThemeAndWayland() {
   applyPasswordMaskStyle();
   applyInputConfig();
   m_httpClient.setOfflineMode(m_configService.config().shell.offlineMode);
+
   auto publishScriptConfig = [this]() {
     toml::table snapshot = config_export::serialize(m_configService.config());
     m_skinService.maskScriptSnapshot(snapshot);
     m_scriptApi.setConfigSnapshot(std::make_shared<const toml::table>(std::move(snapshot)));
   };
   publishScriptConfig();
+
   m_skinService.setProfileReconcileCallback([this, publishScriptConfig]() { publishScriptConfig(); });
   m_configService.addReloadCallback(applyMotionConfig);
   m_configService.addReloadCallback(applyStyleConfig);
@@ -1328,15 +1331,18 @@ void Application::initSystemBusServices() {
     }
     m_configService.addReloadCallback([this]() { m_externalIpService.onConfigReload(); });
 
-    try {
-      m_networkSecretAgent = std::make_unique<NetworkSecretAgent>(*m_systemBus);
-    } catch (const std::exception& e) {
-      kLog.warn("network secret agent disabled: {}", e.what());
-      m_networkSecretAgent.reset();
+    if (noctalia::instance::current().ownsGlobalServices()) {
+      try {
+        m_networkSecretAgent = std::make_unique<NetworkSecretAgent>(*m_systemBus);
+      } catch (const std::exception& e) {
+        kLog.warn("network secret agent disabled: {}", e.what());
+        m_networkSecretAgent.reset();
+      }
     }
 
     // Initialize iwd secret agent if iwd is the active network service
-    if (auto* iwdService = dynamic_cast<IwdService*>(m_networkService.get())) {
+    if (auto* iwdService = dynamic_cast<IwdService*>(m_networkService.get());
+        iwdService != nullptr && noctalia::instance::current().ownsGlobalServices()) {
       try {
         m_iwdSecretAgent = std::make_unique<IwdSecretAgent>(*m_systemBus);
         iwdService->setSecretAgent(m_iwdSecretAgent.get());
@@ -1372,7 +1378,7 @@ void Application::initSystemBusServices() {
       m_bluetoothService.reset();
     }
 
-    if (m_bluetoothService != nullptr) {
+    if (m_bluetoothService != nullptr && noctalia::instance::current().ownsGlobalServices()) {
       try {
         m_bluetoothAgent = std::make_unique<BluetoothAgent>(*m_systemBus);
         m_bluetoothAgent->setRequestCallback([this,
@@ -1504,8 +1510,12 @@ void Application::initBrightnessAndPipewire() {
 void Application::initEarlySessionBusAndTray() {
   try {
     m_bus = std::make_unique<SessionBus>();
+    noctalia::dbus::acquirePrimaryRole(m_bus->connection());
     kLog.info("connected to session bus");
   } catch (const std::exception& e) {
+    if (noctalia::instance::current().role == noctalia::instance::Role::Primary) {
+      throw;
+    }
     // i18n is initialized later, in initStyleThemeAndWayland(), so hold the reason
     // and report it once translations are available.
     kLog.warn("dbus disabled: {}", e.what());
@@ -1531,12 +1541,14 @@ void Application::initSessionBusServices() {
   auto shouldRefreshControlCenter = [this]() { return m_panelManager.isOpenPanel("control-center"); };
 
   if (m_bus != nullptr) {
-    try {
-      m_debugService = std::make_unique<DebugService>(*m_bus, m_notificationManager);
-      kLog.info("debug service active on dev.noctalia.Debug");
-    } catch (const std::exception& e) {
-      kLog.warn("debug service disabled: {}", e.what());
-      m_debugService.reset();
+    if (noctalia::instance::current().ownsGlobalServices()) {
+      try {
+        m_debugService = std::make_unique<DebugService>(*m_bus, m_notificationManager);
+        kLog.info("debug service active on dev.noctalia.Debug");
+      } catch (const std::exception& e) {
+        kLog.warn("debug service disabled: {}", e.what());
+        m_debugService.reset();
+      }
     }
 
     try {

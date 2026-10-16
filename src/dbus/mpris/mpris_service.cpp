@@ -4,6 +4,7 @@
 #include "core/log.h"
 #include "core/timer_manager.h"
 #include "dbus/session_bus.h"
+#include "dbus/shared_service_policy.h"
 #include "ipc/ipc_arg_parse.h"
 #include "ipc/ipc_service.h"
 #include "util/string_utils.h"
@@ -356,7 +357,21 @@ std::string logicalTrackSignature(const MprisPlayerInfo& info) {
 
 MprisService::MprisService(SessionBus& bus)
     : m_bus(bus), m_dbusProxy(sdbus::createProxy(bus.connection(), kDbusName, kDbusPath)) {
-  registerControlApi();
+  if (noctalia::instance::current().ownsGlobalServices()) {
+    try {
+      registerControlApi();
+    } catch (const std::exception& error) {
+      if (!noctalia::instance::current().isolated())
+        throw;
+      m_controlObject.reset();
+      try {
+        m_bus.connection().releaseName(kNoctaliaMprisBusName);
+      } catch (const sdbus::Error&) {
+        // A failed acquisition never owned the name; leave its owner alone.
+      }
+      kLog.warn("shared MPRIS control export disabled; discovery remains active: {}", error.what());
+    }
+  }
   registerBusSignals();
   discoverPlayers();
   scheduleStartupRediscovery();
@@ -1260,7 +1275,7 @@ const std::vector<std::string>& MprisService::preferredPlayers() const noexcept 
 const std::vector<std::string>& MprisService::blacklist() const noexcept { return m_blacklist; }
 
 void MprisService::registerControlApi() {
-  m_bus.connection().requestName(kNoctaliaMprisBusName);
+  noctalia::dbus::acquireServiceName(m_bus.connection(), kNoctaliaMprisBusName);
   m_controlObject = sdbus::createObject(m_bus.connection(), kNoctaliaMprisObjectPath);
 
   m_controlObject
@@ -1464,6 +1479,8 @@ void MprisService::registerControlApi() {
 }
 
 void MprisService::emitPlayersChanged() {
+  if (m_controlObject == nullptr)
+    return;
   std::vector<std::map<std::string, sdbus::Variant>> players;
   for (const auto& player : listPlayers()) {
     players.push_back(to_dbus_player(player));
@@ -1473,6 +1490,8 @@ void MprisService::emitPlayersChanged() {
 }
 
 void MprisService::emitActivePlayerChanged() {
+  if (m_controlObject == nullptr)
+    return;
   const auto active = activePlayer();
   if (!active.has_value()) {
     m_controlObject->emitSignal("ActivePlayerChanged")
@@ -1487,6 +1506,8 @@ void MprisService::emitActivePlayerChanged() {
 }
 
 void MprisService::emitTrackChanged(const MprisPlayerInfo& player) {
+  if (m_controlObject == nullptr)
+    return;
   m_controlObject->emitSignal("TrackChanged")
       .onInterface(kNoctaliaMprisInterface)
       .withArguments(player.busName, to_dbus_player(player));

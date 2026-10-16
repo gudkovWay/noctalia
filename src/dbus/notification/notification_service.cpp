@@ -3,6 +3,7 @@
 #include "compositors/compositor_detect.h"
 #include "core/log.h"
 #include "dbus/session_bus.h"
+#include "dbus/shared_service_policy.h"
 #include "i18n/i18n.h"
 #include "net/uri.h"
 #include "notification/notification_manager.h"
@@ -53,6 +54,11 @@ namespace {
 namespace notification_dbus {
 
   void acquireBusName(sdbus::IConnection& connection) {
+    noctalia::dbus::requireGlobalRole(kFreedesktopNotificationsBusName);
+    if (noctalia::instance::current().isolated()) {
+      noctalia::dbus::acquireServiceName(connection, kBusName);
+      return;
+    }
     auto proxy = dbusDaemonProxy(connection);
 
     const uint32_t flags = notificationNameRequestFlags();
@@ -91,6 +97,7 @@ namespace notification_dbus {
 
 NotificationService::NotificationService(SessionBus& bus, NotificationManager& manager)
     : m_bus(bus), m_manager(manager) {
+  noctalia::dbus::requireGlobalRole(notification_dbus::kFreedesktopNotificationsBusName);
   try {
     m_object = sdbus::createObject(m_bus.connection(), kObjectPath);
 

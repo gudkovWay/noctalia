@@ -206,6 +206,10 @@ void Application::initUiRenderSurfacesAndSettings() {
 }
 
 void Application::performGreeterSync(bool quiet) {
+  if (!noctalia::instance::current().ownsGlobalServices()) {
+    kLog.warn("greeter appearance sync belongs to the primary instance");
+    return;
+  }
   if (!greeter::appearanceSyncAvailable(m_configService.config().shell.greeterSync)) {
     return;
   }
@@ -316,7 +320,8 @@ void Application::performGreeterSync(bool quiet) {
 }
 
 void Application::scheduleGreeterAutoSync() {
-  if (!m_configService.config().shell.greeterSync.autoSync
+  if (!noctalia::instance::current().ownsGlobalServices()
+      || !m_configService.config().shell.greeterSync.autoSync
       || !greeter::appearanceSyncAvailable(m_configService.config().shell.greeterSync)) {
     return;
   }

@@ -1,7 +1,9 @@
 #include "ipc/ipc_service.h"
 
+#include "app/instance_context.h"
 #include "cli/help.h"
 #include "core/log.h"
+#include "ipc/unix_socket_address.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -57,7 +59,7 @@ IpcService::~IpcService() {
     ::close(m_listenFd);
     m_listenFd = -1;
   }
-  if (!m_socketPath.empty()) {
+  if (!m_socketPath.empty() && !m_socketPath.starts_with('@')) {
     ::unlink(m_socketPath.c_str());
   }
 }
@@ -76,18 +78,17 @@ bool IpcService::start() {
   }
 
   // Remove stale socket file before binding
-  ::unlink(m_socketPath.c_str());
+  if (!m_socketPath.starts_with('@'))
+    ::unlink(m_socketPath.c_str());
 
-  sockaddr_un addr{};
-  addr.sun_family = AF_UNIX;
-  if (m_socketPath.size() >= sizeof(addr.sun_path)) {
-    kLog.warn("IPC disabled: socket path too long");
+  const auto addr = noctalia::ipc::unixSocketAddress(m_socketPath);
+  if (!addr) {
+    kLog.warn("IPC disabled: socket address too long");
     ::close(fd);
     return false;
   }
-  std::memcpy(addr.sun_path, m_socketPath.c_str(), m_socketPath.size() + 1);
 
-  if (::bind(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
+  if (::bind(fd, reinterpret_cast<const sockaddr*>(&addr->address), addr->size) < 0) {
     kLog.warn("IPC disabled: bind() failed: {}", std::strerror(errno));
     ::close(fd);
     return false;
@@ -96,7 +97,8 @@ bool IpcService::start() {
   if (::listen(fd, 128) < 0) {
     kLog.warn("IPC disabled: listen() failed: {}", std::strerror(errno));
     ::close(fd);
-    ::unlink(m_socketPath.c_str());
+    if (!m_socketPath.starts_with('@'))
+      ::unlink(m_socketPath.c_str());
     return false;
   }
 
@@ -164,6 +166,10 @@ void IpcService::dispatch() {
     const int connFd = ::accept4(m_listenFd, nullptr, nullptr, SOCK_CLOEXEC);
     if (connFd < 0) {
       break; // EAGAIN / EWOULDBLOCK — no more pending connections
+    }
+    if (m_socketPath.starts_with('@') && !noctalia::ipc::unixSocketPeerIsCurrentUser(connFd)) {
+      ::close(connFd);
+      continue;
     }
     handleConnection(connFd);
     ::close(connFd);
@@ -313,14 +319,4 @@ std::string IpcService::executeParsed(const std::string& command, const std::str
   return it->second.fn(args);
 }
 
-std::string IpcService::resolveSocketPath() {
-  const char* runtime = std::getenv("XDG_RUNTIME_DIR");
-  if (runtime == nullptr || runtime[0] == '\0') {
-    runtime = "/tmp";
-  }
-  const char* display = std::getenv("WAYLAND_DISPLAY");
-  if (display == nullptr || display[0] == '\0') {
-    display = "wayland-0";
-  }
-  return std::string(runtime) + "/noctalia-" + display + ".sock";
-}
+std::string IpcService::resolveSocketPath() { return noctalia::instance::current().socketPath("noctalia", ".sock"); }

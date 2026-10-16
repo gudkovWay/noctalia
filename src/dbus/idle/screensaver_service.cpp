@@ -1,6 +1,7 @@
 #include "dbus/idle/screensaver_service.h"
 
 #include "core/log.h"
+#include "dbus/shared_service_policy.h"
 #include "dbus/system_bus.h"
 
 #include <algorithm>
@@ -33,8 +34,11 @@ namespace {
 
 ScreenSaverService::ScreenSaverService(SystemBus* systemBus) {
   try {
-    m_connection = sdbus::createSessionBusConnection(kBusName);
-    registerScreenSaver();
+    if (noctalia::instance::current().ownsGlobalServices()) {
+      m_connection = sdbus::createSessionBusConnection();
+      noctalia::dbus::acquireServiceName(*m_connection, kBusName);
+      registerScreenSaver();
+    }
   } catch (const sdbus::Error& e) {
     if (e.getName() != kFileExistsError) {
       kLog.warn("screensaver D-Bus registration failed: {}", e.what());

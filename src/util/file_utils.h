@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/instance_context.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -386,7 +388,7 @@ namespace FileUtils {
     return {};
   }
 
-  [[nodiscard]] inline std::string stateDir() {
+  [[nodiscard]] inline std::string stateBaseDir() {
     const char* noctalia = std::getenv("NOCTALIA_STATE_HOME");
     if (noctalia != nullptr && noctalia[0] != '\0') {
       return std::string(noctalia) + "/noctalia";
@@ -401,6 +403,8 @@ namespace FileUtils {
     }
     return {};
   }
+
+  [[nodiscard]] inline std::string stateDir() { return noctalia::instance::current().statePath(stateBaseDir()); }
 
   [[nodiscard]] inline std::string dataDir() {
     const char* noctalia = std::getenv("NOCTALIA_DATA_HOME");

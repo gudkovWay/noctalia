@@ -2,6 +2,7 @@
 
 #include "core/deferred_call.h"
 #include "core/log.h"
+#include "ipc/unix_socket_address.h"
 #include "launcher/dmenu_socket_path.h"
 #include "launcher/dmenu_stdin_provider.h"
 #include "shell/launcher/launcher_panel.h"
@@ -32,7 +33,7 @@ DmenuIpcService::~DmenuIpcService() {
   if (m_listenFd >= 0) {
     ::close(m_listenFd);
   }
-  if (!m_socketPath.empty()) {
+  if (!m_socketPath.empty() && !m_socketPath.starts_with('@')) {
     ::unlink(m_socketPath.c_str());
   }
 }
@@ -51,18 +52,17 @@ bool DmenuIpcService::start() {
     return false;
   }
 
-  ::unlink(m_socketPath.c_str());
+  if (!m_socketPath.starts_with('@'))
+    ::unlink(m_socketPath.c_str());
 
-  sockaddr_un addr{};
-  addr.sun_family = AF_UNIX;
-  if (m_socketPath.size() >= sizeof(addr.sun_path)) {
-    kLog.warn("disabled: socket path too long");
+  const auto addr = noctalia::ipc::unixSocketAddress(m_socketPath);
+  if (!addr) {
+    kLog.warn("disabled: socket address too long");
     ::close(fd);
     return false;
   }
-  std::memcpy(addr.sun_path, m_socketPath.c_str(), m_socketPath.size() + 1);
 
-  if (::bind(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
+  if (::bind(fd, reinterpret_cast<const sockaddr*>(&addr->address), addr->size) < 0) {
     kLog.warn("disabled: bind() failed: {}", std::strerror(errno));
     ::close(fd);
     return false;
@@ -70,7 +70,8 @@ bool DmenuIpcService::start() {
   if (::listen(fd, 8) < 0) {
     kLog.warn("disabled: listen() failed: {}", std::strerror(errno));
     ::close(fd);
-    ::unlink(m_socketPath.c_str());
+    if (!m_socketPath.starts_with('@'))
+      ::unlink(m_socketPath.c_str());
     return false;
   }
 
@@ -146,6 +147,10 @@ void DmenuIpcService::acceptConnections() {
     const int connFd = ::accept4(m_listenFd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
     if (connFd < 0) {
       break;
+    }
+    if (m_socketPath.starts_with('@') && !noctalia::ipc::unixSocketPeerIsCurrentUser(connFd)) {
+      ::close(connFd);
+      continue;
     }
     auto session = std::make_unique<Session>();
     session->connFd = connFd;

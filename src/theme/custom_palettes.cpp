@@ -218,28 +218,39 @@ namespace noctalia::theme {
   }
 
   std::filesystem::path customPalettePath(std::string_view name) {
+    if (instance::current().isolated()) {
+      const auto local = std::filesystem::path(FileUtils::stateDir()) / "palettes" / (std::string(name) + ".json");
+      if (std::filesystem::exists(local))
+        return local;
+    }
     return customPaletteDir() / (std::string(name) + ".json");
   }
 
   std::vector<AvailablePalette> availableCustomPalettes() {
-    const auto dir = customPaletteDir();
-    if (dir.empty()) {
-      return {};
-    }
-    std::error_code ec;
-    if (!std::filesystem::is_directory(dir, ec) || ec) {
-      return {};
-    }
+    const std::array directories{
+        customPaletteDir(),
+        instance::current().isolated() ? std::filesystem::path(FileUtils::stateDir()) / "palettes"
+                                       : std::filesystem::path{}
+    };
     std::vector<AvailablePalette> out;
-    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-      if (ec || !entry.is_regular_file(ec) || ec) {
+    for (const auto& dir : directories) {
+      std::error_code ec;
+      if (dir.empty() || !std::filesystem::is_directory(dir, ec) || ec)
         continue;
+      for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec || !entry.is_regular_file(ec) || ec)
+          continue;
+        const auto& path = entry.path();
+        if (path.extension() != ".json")
+          continue;
+        const auto name = path.stem().string();
+        const auto existing = std::ranges::find(out, name, &AvailablePalette::name);
+        AvailablePalette entryPalette{.name = name, .preview = palettePreviewFromFile(path)};
+        if (existing != out.end())
+          *existing = std::move(entryPalette);
+        else
+          out.push_back(std::move(entryPalette));
       }
-      const auto& path = entry.path();
-      if (path.extension() != ".json") {
-        continue;
-      }
-      out.push_back(AvailablePalette{.name = path.stem().string(), .preview = palettePreviewFromFile(path)});
     }
     std::ranges::sort(out, {}, &AvailablePalette::name);
     return out;
@@ -298,7 +309,8 @@ namespace noctalia::theme {
       return fail("invalid custom palette name");
     }
 
-    const auto dir = customPaletteDir();
+    const auto dir =
+        instance::current().isolated() ? std::filesystem::path(FileUtils::stateDir()) / "palettes" : customPaletteDir();
     if (dir.empty()) {
       return fail("config directory unavailable");
     }
@@ -326,7 +338,7 @@ namespace noctalia::theme {
       return fail("failed to create palettes directory");
     }
 
-    const auto path = customPalettePath(trimmed);
+    const auto path = dir / (trimmed + ".json");
     std::ofstream out(path);
     if (!out) {
       return fail("failed to write custom palette file");

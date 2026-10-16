@@ -1,5 +1,6 @@
 #include "hooks/hook_manager.h"
 
+#include "app/instance_context.h"
 #include "core/log.h"
 
 #include <cstdlib>
@@ -23,6 +24,18 @@ bool HookManager::fireBlocking(HookKind kind) const {
 }
 
 bool HookManager::fireWithRunner(HookKind kind, const CommandRunner& runner) const {
+  // Legacy logout hooks cannot prove a compositor target. Shared lifecycle,
+  // theme and hardware-event hooks run once, in the primary. Display-local
+  // wallpaper/lock hooks (including the real external power/wake workflow)
+  // remain available in both roles.
+  if (noctalia::instance::current().isolated() && kind == HookKind::LoggingOut)
+    return true;
+  if (!noctalia::instance::current().ownsGlobalServices()
+      && kind != HookKind::WallpaperChanged
+      && kind != HookKind::SessionLocked
+      && kind != HookKind::SessionUnlocked) {
+    return true;
+  }
   if (kind == HookKind::Count || !runner) {
     return false;
   }

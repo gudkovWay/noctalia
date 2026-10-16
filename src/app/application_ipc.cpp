@@ -114,28 +114,51 @@ void Application::initIpc() {
   if (m_ipcService.start()) {
     kLog.info("IPC socket at {}", m_ipcService.socketPath());
   } else {
+    if (noctalia::instance::current().isolated()) {
+      throw std::runtime_error("multi-session IPC could not bind its instance address");
+    }
     kLog.warn("IPC disabled: could not bind socket");
   }
 
   m_dmenuIpc.setLauncherPanel(m_launcherPanel);
   m_dmenuIpc.setPanelManager(&m_panelManager);
-  m_dmenuIpc.start();
+  if (!m_dmenuIpc.start() && noctalia::instance::current().isolated()) {
+    throw std::runtime_error("multi-session dmenu could not bind its instance address");
+  }
 
   m_ipcService.bind(
       noctalia::cli::msg::status,
       [this](const std::string&) -> std::string {
-        const bool panelOpen = m_panelManager.isOpen();
-        std::string json = "{\n";
-        json += "  \"barVisible\": ";
-        json += m_bar.isVisible() ? "true" : "false";
-        json += ",\n  \"panelOpen\": ";
-        json += panelOpen ? "true" : "false";
-        json += ",\n  \"activePanelId\": ";
-        json += panelOpen ? ("\"" + m_panelManager.activePanelId() + "\"") : "null";
-        json += ",\n  \"locked\": ";
-        json += m_lockScreen.isActive() ? "true" : "false";
-        json += "\n}\n";
-        return json;
+        const auto& instance = noctalia::instance::current();
+        nlohmann::json status{
+            {"barVisible", m_bar.isVisible()},
+            {"panelOpen", m_panelManager.isOpen()},
+            {"activePanelId",
+             m_panelManager.isOpen() ? nlohmann::json(m_panelManager.activePanelId()) : nlohmann::json(nullptr)},
+            {"locked", m_lockScreen.isActive()},
+            {"instance",
+             {{"role", instance.roleName()},
+              {"id", instance.id},
+              {"waylandSocket", instance.waylandSocket},
+              {"ipcSocket", m_ipcService.socketPath()},
+              {"stateDir", FileUtils::stateDir()},
+              {"sharedConfigDir", FileUtils::configDir()},
+              {"sharedPluginCodeDir", FileUtils::dataDir()},
+              {"globalServiceRole", instance.ownsGlobalServices()},
+              {"standardNotificationDelivery",
+               !instance.ownsGlobalServices()
+                   ? "primary-only"
+                   : (m_notificationDbus != nullptr && m_notificationDbus->isHealthy() ? "active" : "unavailable")},
+              {"debugExport", m_debugService != nullptr},
+              {"mprisControlExport", m_mprisService != nullptr && m_mprisService->hasControlApi()},
+              {"screenSaverExport", m_screenSaverService != nullptr && m_screenSaverService->hasScreenSaverBus()},
+              {"polkitAgent", m_polkitAgent != nullptr},
+              {"networkSecretAgent", m_networkSecretAgent != nullptr},
+              {"iwdSecretAgent", m_iwdSecretAgent != nullptr},
+              {"bluetoothAgent", m_bluetoothAgent != nullptr}}}
+
+        };
+        return status.dump(2) + "\n";
       },
       IpcService::HandlerOptions{.actionEditorVisibility = IpcService::ActionEditorVisibility::Hidden}
   );

@@ -1,5 +1,6 @@
 #include "compositors/hyprland/hyprland_runtime.h"
 
+#include "app/instance_context.h"
 #include "compositors/hyprland/hyprland_event_handler.h"
 #include "core/log.h"
 
@@ -228,6 +229,12 @@ namespace compositors::hyprland {
         .request = hyprDir + "/.socket.sock",
         .event = hyprDir + "/.socket2.sock",
     };
+    if (noctalia::instance::current().isolated()
+        && !noctalia::instance::socketBelongsToWayland(
+            m_socketPaths.request, noctalia::instance::current().waylandSocket
+        )) {
+      m_socketPaths = {};
+    }
   }
 
   void HyprlandRuntime::updateConfigProvider() {

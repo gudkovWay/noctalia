@@ -191,6 +191,8 @@ namespace noctalia::theme {
   void TemplateApplyService::apply(
       const GeneratedPalette& palette, std::string_view defaultMode, bool force, bool paletteChanged
   ) const {
+    if (!instance::current().ownsGlobalServices())
+      return;
     ApplyRequest request = makeRequest(palette, defaultMode);
     bool queued = false;
     std::function<void()> undeliverable;
@@ -231,6 +233,8 @@ namespace noctalia::theme {
   }
 
   bool TemplateApplyService::reapplyLast() const {
+    if (!instance::current().ownsGlobalServices())
+      return false;
     GeneratedPalette palette;
     std::string defaultMode;
     {
@@ -257,6 +261,9 @@ namespace noctalia::theme {
 
   void TemplateApplyService::registerIpc(IpcService& ipc) {
     ipc.bind(noctalia::cli::msg::templatesApply, [this](const std::string& args) -> std::string {
+      if (!instance::current().ownsGlobalServices()) {
+        return "error: secondary instances do not apply shared theme templates\n";
+      }
       if (!StringUtils::trim(args).empty()) {
         return "error: usage: templates-apply\n";
       }

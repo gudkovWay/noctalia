@@ -431,6 +431,7 @@ _noctalia_sources = files(
   'src/app/application_ui.cpp',
   'src/app/main_loop.cpp',
   'src/app/single_instance_lock.cpp',
+  'src/app/instance_context.cpp',
   'src/auth/fingerprint_authenticator.cpp',
   'src/auth/pam_authenticator.cpp',
   'src/calendar/caldav_client.cpp',
@@ -495,6 +496,7 @@ _noctalia_sources = files(
   'src/dbus/power/power_profiles_service.cpp',
   'src/dbus/secret/secret_collection_probe.cpp',
   'src/dbus/session_bus.cpp',
+  'src/dbus/shared_service_policy.cpp',
   'src/dbus/system_bus.cpp',
   'src/dbus/tray/fcitx_status.cpp',
   'src/dbus/tray/tray_service.cpp',
@@ -1238,6 +1240,7 @@ if build_tests
     'input_password_mode',
     'input_readline_shortcuts',
     'ipc_service',
+    'instance_context',
     'jxl_decoder',
     'kde_color_scheme',
     'keyboard_layout_label',
@@ -1359,7 +1362,19 @@ if build_tests
     override_options: ['b_ndebug=false'],
   )
   dbus_run_session = find_program('dbus-run-session', required: false)
+  multiwm_bus_exe = executable('multiwm_bus_integration_test',
+    sources: files('tests/multiwm_bus_integration_test.cpp'),
+    dependencies: noctalia_core_dep,
+    override_options: ['b_ndebug=false'],
+  )
   if dbus_run_session.found()
+    foreach role : ['primary', 'secondary', 'legacy']
+      test('multiwm_bus_' + role,
+        dbus_run_session,
+        args: ['--', multiwm_bus_exe.full_path(), role],
+        depends: multiwm_bus_exe,
+      )
+    endforeach
     test('upower_charge_limit_integration',
       dbus_run_session,
       args: [

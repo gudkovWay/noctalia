@@ -1,5 +1,8 @@
 #include "ipc/ipc_client.h"
 
+#include "app/instance_context.h"
+#include "ipc/unix_socket_address.h"
+
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -16,17 +19,7 @@ namespace {
 
   constexpr char kCallerCwdSeparator = '\x1e';
 
-  std::string resolveSocketPath() {
-    const char* runtime = std::getenv("XDG_RUNTIME_DIR");
-    if (runtime == nullptr || runtime[0] == '\0') {
-      runtime = "/tmp";
-    }
-    const char* display = std::getenv("WAYLAND_DISPLAY");
-    if (display == nullptr || display[0] == '\0') {
-      display = "wayland-0";
-    }
-    return std::string(runtime) + "/noctalia-" + display + ".sock";
-  }
+  std::string resolveSocketPath() { return noctalia::instance::current().socketPath("noctalia", ".sock"); }
 
 } // namespace
 
@@ -45,16 +38,14 @@ int IpcClient::send(const std::string& command) {
   ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
   ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-  sockaddr_un addr{};
-  addr.sun_family = AF_UNIX;
-  if (path.size() >= sizeof(addr.sun_path)) {
-    std::println(stderr, "error: socket path too long");
+  const auto addr = noctalia::ipc::unixSocketAddress(path);
+  if (!addr) {
+    std::println(stderr, "error: socket address too long");
     ::close(fd);
     return 1;
   }
-  std::memcpy(addr.sun_path, path.c_str(), path.size() + 1);
 
-  if (::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
+  if (::connect(fd, reinterpret_cast<const sockaddr*>(&addr->address), addr->size) < 0) {
     std::println(stderr, "error: noctalia is not running");
     ::close(fd);
     return 1;

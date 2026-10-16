@@ -1,4 +1,5 @@
 #include "app/application.h"
+#include "app/instance_context.h"
 #include "app/single_instance_lock.h"
 #include "auth/pam_authenticator.h"
 #include "cli/completions.h"
@@ -13,6 +14,7 @@
 #include "scripting/plugin_lint.h"
 #include "theme/cli.h"
 #include "theme/firefox_theme/firefox_theme.h"
+#include "util/file_utils.h"
 
 #include <array>
 #include <cerrno>
@@ -224,10 +226,16 @@ namespace {
     // Claim the single-instance lock before any shell/Wayland init so the answer
     // is settled before bars or surfaces are created. Held for the process lifetime.
     SingleInstanceLock instanceLock;
-    if (!instanceLock.tryAcquire()) {
-      std::println(stderr, "error: noctalia is already running");
+    try {
+      if (!instanceLock.tryAcquire()) {
+        std::println(stderr, "error: noctalia is already running");
+        completeDaemonStartup(1);
+        _exit(1);
+      }
+    } catch (const std::exception& error) {
+      std::println(stderr, "error: {}", error.what());
       completeDaemonStartup(1);
-      _exit(1);
+      return 1;
     }
     try {
       Application app;
@@ -258,6 +266,15 @@ int main(int argc, char* argv[]) {
   std::setlocale(LC_NUMERIC, "C");
 
   const bool isDaemonChild = takeDaemonPipeFromEnv();
+  try {
+    noctalia::instance::consumeOptions(argc, argv);
+    (void)noctalia::instance::current();
+    noctalia::instance::exportSubprocessContext(FileUtils::stateDir());
+  } catch (const std::exception& error) {
+    std::println(stderr, "error: {}", error.what());
+    completeDaemonStartup(1);
+    return 1;
+  }
   bool shouldDaemonize = false;
 
   for (int i = 1; i < argc; ++i) {

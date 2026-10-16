@@ -2,6 +2,7 @@
 
 #include "core/log.h"
 #include "dbus/polkit/polkit_session_support.h"
+#include "dbus/shared_service_policy.h"
 #include "i18n/i18n.h"
 
 #include <algorithm>
@@ -744,7 +745,10 @@ struct PolkitAgent::Impl {
   }
 };
 
-PolkitAgent::PolkitAgent(SystemBus& /*bus*/) : m_impl(std::make_unique<Impl>()) {}
+PolkitAgent::PolkitAgent(SystemBus& /*bus*/) {
+  noctalia::dbus::requireGlobalRole("polkit authentication agent");
+  m_impl = std::make_unique<Impl>();
+}
 
 PolkitAgent::~PolkitAgent() = default;
 

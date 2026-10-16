@@ -1,10 +1,16 @@
 #include "launcher/dmenu_socket_path.h"
 
+#include "app/instance_context.h"
+
 #include <cstdlib>
+#include <stdexcept>
 
 namespace noctalia::launcher {
 
   DmenuSocketPathResult resolveDmenuSocketPath() {
+    if (instance::current().isolated()) {
+      return {.path = instance::current().socketPath("noctalia-dmenu", ".sock"), .error = {}};
+    }
     const char* runtime = std::getenv("XDG_RUNTIME_DIR");
     if (runtime == nullptr || runtime[0] == '\0') {
       return {.path = {}, .error = "XDG_RUNTIME_DIR is not set"};

@@ -1,5 +1,6 @@
 #include "shell/session/session_action_runner.h"
 
+#include "app/instance_context.h"
 #include "compositors/compositor_detect.h"
 #include "compositors/compositor_platform.h"
 #include "core/log.h"
@@ -237,6 +238,12 @@ void SessionActionRunner::setPowerConfig(const ShellSessionConfig::ShellSessionP
 }
 
 void SessionActionRunner::invoke(const SessionPanelActionConfig& cfg) const {
+  if (cfg.action == "logout" && noctalia::instance::current().isolated()) {
+    // Neither authored legacy logout overrides nor hooks prove an instance
+    // target. Do not execute them before the native scoped exit decision.
+    runPowerAction({}, [platform = &m_platform]() { return platform->requestSessionExit(); }, "logout");
+    return;
+  }
   if (cfg.command.has_value() && !StringUtils::trim(*cfg.command).empty()) {
     runShellCommand(hookFor(cfg.action), StringUtils::trim(*cfg.command), cfg.action);
     return;

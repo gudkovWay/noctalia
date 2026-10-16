@@ -1,5 +1,6 @@
 #include "compositors/compositor_platform.h"
 
+#include "app/instance_context.h"
 #include "compositors/compositor_detect.h"
 #include "compositors/compositor_runtime.h"
 #include "compositors/ext_workspace/ext_workspace_output_backend.h"
@@ -144,6 +145,12 @@ namespace {
   }
 
   [[nodiscard]] bool requestLoginSessionExit() {
+    if (noctalia::instance::current().isolated()) {
+      kLog.warn(
+          "logout refused: no proven compositor-instance exit protocol; login/user/target fallbacks are disabled"
+      );
+      return false;
+    }
     if (const char* sessionId = std::getenv("XDG_SESSION_ID"); sessionId != nullptr && sessionId[0] != '\0') {
       if (process::launchFirstAvailable({{"loginctl", "terminate-session", sessionId}})) {
         return true;
@@ -1547,6 +1554,27 @@ void CompositorPlatform::dispatchKeyboardLayoutPoll(const std::vector<pollfd>& f
 bool CompositorPlatform::requestSessionExit() const {
   const compositors::CompositorKind compositor = compositors::detect();
   logSessionExitContext(compositor);
+  if (noctalia::instance::current().isolated()) {
+    std::string target;
+    switch (compositor) {
+    case compositors::CompositorKind::Hyprland:
+      target = m_runtimeRegistry->hyprland().requestSocketPath();
+      break;
+    case compositors::CompositorKind::Niri:
+      target = m_runtimeRegistry->niri().socketPath();
+      break;
+    case compositors::CompositorKind::Sway:
+      target = m_runtimeRegistry->sway().socketPath();
+      break;
+    default:
+      kLog.warn("logout refused: {} has no proven instance-targeted exit adapter", compositors::name(compositor));
+      return false;
+    }
+    if (!noctalia::instance::socketBelongsToWayland(target, noctalia::instance::current().waylandSocket)) {
+      kLog.warn("logout refused: native IPC peer is not the selected Wayland compositor");
+      return false;
+    }
+  }
 
   switch (compositor) {
   case compositors::CompositorKind::Hyprland: {
@@ -1558,6 +1586,10 @@ bool CompositorPlatform::requestSessionExit() const {
   }
   case compositors::CompositorKind::Sway: {
     const auto& command = m_runtimeRegistry->sway().msgCommand();
+    if (noctalia::instance::current().isolated()) {
+      return !command.empty()
+          && process::runAsync(std::vector<std::string>{command, "-s", m_runtimeRegistry->sway().socketPath(), "exit"});
+    }
     return !command.empty() && process::runAsync(std::vector<std::string>{command, "exit"});
   }
   case compositors::CompositorKind::Niri:
