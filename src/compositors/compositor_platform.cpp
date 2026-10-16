@@ -332,6 +332,10 @@ namespace {
   [[nodiscard]] std::unique_ptr<compositors::OutputPowerBackend>
   createOutputPowerBackend(compositors::CompositorRuntimeRegistry& runtimeRegistry) {
     switch (compositors::detect()) {
+    case compositors::CompositorKind::Shoji:
+      // The identity/temperature endpoint does not imply a complete native
+      // power/wake workflow. Keep the owner's real external power hooks.
+      return nullptr;
     case compositors::CompositorKind::Hyprland:
       return std::make_unique<LambdaOutputPowerBackend>(
           [&runtime = runtimeRegistry.hyprland()](WaylandConnection& /*wayland*/, bool on) {
@@ -382,6 +386,7 @@ namespace {
       return std::make_unique<FocusedOutputAdapter<SwayOutputBackend>>(runtimeRegistry.sway());
     case compositors::CompositorKind::Umbriel:
       return std::make_unique<FocusedOutputAdapter<UmbrielOutputBackend>>(runtimeRegistry.umbriel());
+    case compositors::CompositorKind::Shoji:
     case compositors::CompositorKind::Dwl:
     case compositors::CompositorKind::Labwc:
     case compositors::CompositorKind::Kde:
@@ -405,6 +410,7 @@ namespace {
     case compositors::CompositorKind::Dwl:
     case compositors::CompositorKind::Kde:
     case compositors::CompositorKind::Labwc:
+    case compositors::CompositorKind::Shoji:
     case compositors::CompositorKind::Unknown:
       break;
     }
@@ -427,6 +433,7 @@ namespace {
     case compositors::CompositorKind::Dwl:
     case compositors::CompositorKind::Labwc:
     case compositors::CompositorKind::Kde:
+    case compositors::CompositorKind::Shoji:
     case compositors::CompositorKind::Unknown:
       break;
     }
@@ -1612,6 +1619,7 @@ bool CompositorPlatform::requestSessionExit() const {
     }
     break;
   case compositors::CompositorKind::Kde:
+  case compositors::CompositorKind::Shoji:
   case compositors::CompositorKind::Unknown:
     break;
   }

@@ -132,6 +132,11 @@ void WaylandWorkspaces::initialize() {
   };
 
   switch (compositors::detect()) {
+  case compositors::CompositorKind::Shoji:
+    // Shoji's selected Wayland connection exposes ext-workspace. Never fall
+    // through to inherited socket backends if that protocol is unavailable.
+    setActiveBackend(availableOrConnected(m_extBackend) ? m_extBackend : nullptr);
+    return;
   case compositors::CompositorKind::Hyprland:
     if (availableOrConnected(m_hyprlandBackend, m_hyprlandConnector)) {
       setActiveBackend(m_hyprlandBackend);

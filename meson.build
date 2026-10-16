@@ -964,6 +964,7 @@ _noctalia_sources = files(
   'src/compositors/niri/niri_output_backend.cpp',
   'src/compositors/niri/niri_keyboard_backend.cpp',
   'src/compositors/niri/niri_workspace_backend.cpp',
+  'src/compositors/shoji/shoji_identity.cpp',
   'src/compositors/umbriel/umbriel_runtime.cpp',
   'src/compositors/umbriel/umbriel_event_handler.cpp',
   'src/compositors/umbriel/umbriel_workspace_backend.cpp',
@@ -1170,6 +1171,11 @@ if build_tests
     output: 'wlr-screencopy-unstable-v1-test-server-protocol.h',
     command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
   )
+  _ext_workspace_test_server_h = custom_target('ext-workspace-v1-test-server-header',
+    input: wayland_protos_dir / 'staging/ext-workspace/ext-workspace-v1.xml',
+    output: 'ext-workspace-v1-test-server-protocol.h',
+    command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+  )
 
   _cpp_test_names = [
     'annotation_document',
@@ -1241,6 +1247,7 @@ if build_tests
     'input_readline_shortcuts',
     'ipc_service',
     'instance_context',
+    'multiwm_compositor',
     'jxl_decoder',
     'kde_color_scheme',
     'keyboard_layout_label',
@@ -1340,6 +1347,12 @@ if build_tests
     override_options: ['b_ndebug=false'],
   )
   test('screencopy_connection_isolation', screencopy_connection_isolation_exe)
+  shoji_workspace_exe = executable('shoji_workspace_integration_test',
+    sources: files('tests/shoji_workspace_integration_test.cpp') + [_ext_workspace_test_server_h],
+    dependencies: [noctalia_core_dep, wayland_server_dep],
+    override_options: ['b_ndebug=false'],
+  )
+  test('shoji_workspace_integration', shoji_workspace_exe)
 
   upower_integration_exe = executable('upower_charge_limit_integration_test',
     sources: files('tests/upower_charge_limit_integration_test.cpp'),

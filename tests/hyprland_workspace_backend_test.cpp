@@ -723,6 +723,13 @@ int main() {
   // The runtime resolves its socket paths from the environment on construction.
   ::setenv("XDG_RUNTIME_DIR", runtimeDir.c_str(), 1);
   ::setenv("HYPRLAND_INSTANCE_SIGNATURE", signature.c_str(), 1);
+  // This fixture owns Hyprland sockets, not the caller's desktop or instance.
+  ::setenv("XDG_CURRENT_DESKTOP", "Hyprland", 1);
+  ::setenv("XDG_SESSION_DESKTOP", "Hyprland", 1);
+  ::setenv("DESKTOP_SESSION", "Hyprland", 1);
+  ::unsetenv("NOCTALIA_SESSION_ROLE");
+  ::unsetenv("WAYLAND_DISPLAY");
+  ::unsetenv("WAYLAND_SOCKET");
 
   bool ok = true;
   {

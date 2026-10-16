@@ -3,6 +3,7 @@
 #include "application_internal.h"
 #include "cli/schema_msg.h"
 #include "compositors/compositor_detect.h"
+#include "compositors/shoji/shoji_identity.h"
 #include "config/config_types.h"
 #include "core/build_info.h"
 #include "core/deferred_call.h"
@@ -155,8 +156,17 @@ void Application::initIpc() {
               {"polkitAgent", m_polkitAgent != nullptr},
               {"networkSecretAgent", m_networkSecretAgent != nullptr},
               {"iwdSecretAgent", m_iwdSecretAgent != nullptr},
-              {"bluetoothAgent", m_bluetoothAgent != nullptr}}}
-
+              {"bluetoothAgent", m_bluetoothAgent != nullptr}}},
+            {"compositor",
+             {{"name", compositors::name(compositors::detect())},
+              {"workspaceBackend", m_compositorPlatform.workspaceBackendName()},
+              {"keyboardLayoutBackend", m_compositorPlatform.hasKeyboardLayoutBackend()},
+              {"extWorkspaceProtocol", m_wayland.hasExtWorkspaceManager()},
+              {"gammaControlProtocol", m_wayland.hasGammaControl()},
+              {"outputManagementProtocol", m_wayland.hasOutputManagement()},
+              {"nativeShojiIdentity", compositors::isShoji() && compositors::shoji::selectedInstanceIsShoji()},
+              {"shojiPowerWake", compositors::isShoji() ? "external-hooks" : "not-applicable"},
+              {"logoutPolicy", instance.isolated() ? "proven-native-instance-only" : "legacy"}}}
         };
         return status.dump(2) + "\n";
       },

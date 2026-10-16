@@ -8,7 +8,8 @@ namespace wayland_protocol_policy {
     return compositor == compositors::CompositorKind::Niri
         || compositor == compositors::CompositorKind::Hyprland
         || compositor == compositors::CompositorKind::Kde
-        || compositor == compositors::CompositorKind::Umbriel;
+        || compositor == compositors::CompositorKind::Umbriel
+        || compositor == compositors::CompositorKind::Shoji;
   }
 
 } // namespace wayland_protocol_policy

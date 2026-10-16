@@ -1,5 +1,6 @@
 #include "compositors/compositor_detect.h"
 
+#include "compositors/shoji/shoji_identity.h"
 #include "util/string_utils.h"
 
 #include <cstdlib>
@@ -26,6 +27,13 @@ namespace compositors {
     }
 
     [[nodiscard]] CompositorKind detectImpl() {
+      // Selected-instance identity outranks inherited compositor hints (nested
+      // Shoji commonly inherits a still-live outer Hyprland signature).
+      if (shoji::selectedInstanceIsShoji())
+        return CompositorKind::Shoji;
+      const std::string hint = buildEnvHint();
+      if (StringUtils::containsInsensitive(hint, "shoji"))
+        return CompositorKind::Shoji;
       // Compositor-set env vars are the most reliable signal.
       if (const char* v = std::getenv("UMBRIEL_SOCKET"); v != nullptr && v[0] != '\0') {
         return CompositorKind::Umbriel;
@@ -47,7 +55,6 @@ namespace compositors {
       }
 
       // Fall back to the desktop env hint (covers dwl-style compositors that don't expose a socket var).
-      const std::string hint = buildEnvHint();
       if (StringUtils::containsInsensitive(hint, "umbriel")) {
         return CompositorKind::Umbriel;
       }
@@ -100,6 +107,8 @@ namespace compositors {
       return "KDE";
     case CompositorKind::Umbriel:
       return "Umbriel";
+    case CompositorKind::Shoji:
+      return "ShojiWM";
     case CompositorKind::Unknown:
       return "Unknown";
     }
