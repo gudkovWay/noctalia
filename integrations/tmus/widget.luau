@@ -1,0 +1,272 @@
+--!nonstrict
+
+-- Общий скин десктопа (модуль и skin-assets кладутся рядом с плагином
+-- при деплое): отсюда только шрифт — рамку/панель виджет не рисует.
+local skin = require('./desktop_skin.luau')
+
+local KEY = "tmus"
+local PANEL = "q/tmus:library"
+local SERVICE = "q/tmus:watch"
+
+local TITLE_WIDTH = math.max(0, tonumber(noctalia.getConfig("title_width")) or 28)
+local ART = 18
+-- Компактная капсула нативного бара: строка БЕЗ собственной заливки и
+-- рамки — фон, боковой отступ (padding = 8.0) и скругление даёт
+-- capsule_group хоста, в котором виджет стоит рядом с audio_visualizer
+-- (settings.toml, группа music). Своя капсула внутри хостовой читалась
+-- бы как вложенная плашка, а фиксированная высота больше бара растянула
+-- бы саму панель.
+-- Высота = толщине нативного бара в принятом конфиге (24 логических px,
+-- [bar.default].thickness); просившиеся в задаче 26 px относятся к
+-- капсуле целиком и задаются настройками хоста — это зона оркестратора,
+-- а не плагина. Контент (арт 18 + подпись 12 px) заведомо ниже строки.
+local BAR_H = 24
+
+local snapshot = {}
+
+local function poke(event, payload)
+  local cmd = "noctalia msg plugin " .. SERVICE .. " all " .. event
+  if payload then
+    cmd = cmd .. " " .. payload
+  end
+  noctalia.runAsync(cmd)
+end
+
+local function clock(seconds)
+  local total = math.floor(tonumber(seconds) or 0)
+  if total < 0 then
+    total = 0
+  end
+  local h = total // 3600
+  local m = (total % 3600) // 60
+  local s = total % 60
+  if h > 0 then
+    return string.format("%d:%02d:%02d", h, m, s)
+  end
+  return string.format("%d:%02d", m, s)
+end
+
+local function shorten(text, limit)
+  if limit <= 0 or text == "" then
+    return ""
+  end
+  local count = utf8.len(text)
+  if count == nil or count <= limit then
+    return text
+  end
+  local cut = utf8.offset(text, limit - 1)
+  if cut == nil then
+    return text
+  end
+  return string.sub(text, 1, cut - 1) .. "…"
+end
+
+local function stateName(s)
+  if not s.linked then
+    return "disconnected"
+  end
+  if s.status == "playing" then
+    return "playing"
+  end
+  if s.status == "paused" then
+    return "paused"
+  end
+  return "stopped"
+end
+
+local function label(s)
+  if not s.linked then
+    return "tmusd offline"
+  end
+  if (s.title or "") == "" then
+    return stateName(s)
+  end
+  local text = s.title
+  if (s.artist or "") ~= "" then
+    text = s.artist .. " — " .. s.title
+  end
+  return shorten(text, TITLE_WIDTH)
+end
+
+local function tooltip(s)
+  local rows = {}
+  if not s.linked then
+    table.insert(rows, { key = "state", value = "disconnected" })
+    table.insert(rows, { key = "error", value = (s.error or "") ~= "" and s.error or "tmusd is not running" })
+    table.insert(rows, { key = "hint", value = "systemctl --user start tmusd" })
+    return rows
+  end
+  table.insert(rows, { key = "state", value = stateName(s) })
+  if (s.error or "") ~= "" then
+    table.insert(rows, { key = "error", value = s.error })
+  end
+  if (s.title or "") ~= "" then
+    table.insert(rows, { key = "track", value = s.title })
+    if (s.artist or "") ~= "" then
+      table.insert(rows, { key = "artist", value = s.artist })
+    end
+    if (s.album or "") ~= "" then
+      table.insert(rows, { key = "album", value = s.album })
+    end
+    local dur = tonumber(s.duration) or 0
+    if dur > 0 then
+      table.insert(rows, { key = "time", value = clock(s.position) .. " / " .. clock(dur) })
+    else
+      table.insert(rows, { key = "time", value = clock(s.position) })
+    end
+    if (s.provider or "") ~= "" then
+      table.insert(rows, { key = "source", value = s.provider .. (s.offline and " · cached" or "") })
+    end
+  end
+  if (tonumber(s.queueLen) or 0) > 0 then
+    local index = tonumber(s.queueIndex)
+    local place = index ~= nil and tostring(index + 1) .. "/" .. tostring(s.queueLen)
+      or tostring(s.queueLen)
+    table.insert(rows, { key = "queue", value = place })
+  end
+  table.insert(rows, { key = "client", value = tostring(s.source or "all") })
+  table.insert(rows, { key = "volume", value = string.format("%d%%", math.floor(tonumber(s.volume) or 0)) })
+  local mods = {}
+  if s.shuffle then
+    table.insert(mods, "shuffled")
+  end
+  if (s.loop or "none") ~= "none" then
+    table.insert(mods, "repeat: " .. tostring(s.loop))
+  end
+  if #mods > 0 then
+    table.insert(rows, { key = "mode", value = table.concat(mods, " · ") })
+  end
+  return rows
+end
+
+local function glyphFor(s)
+  if not s.linked then
+    return "plug-off", "error"
+  end
+  if s.status == "paused" then
+    return "player-pause", "secondary"
+  end
+  return "music", "on_surface_variant"
+end
+
+local function artNode(s)
+  local art = tostring(s.artPath or "")
+  if art ~= "" and s.status ~= "stopped" and s.linked then
+    return ui.image({
+      key = "art",
+      path = art,
+      width = ART,
+      height = ART,
+      radius = ART // 2,
+      fit = "cover",
+      opacity = s.status == "paused" and 0.6 or 1.0,
+    })
+  end
+  local glyph, color = glyphFor(s)
+  return ui.glyph({ key = "glyph", name = glyph or "music", color = color or "on_surface_variant" })
+end
+
+-- Индикатор паузы. artNode уже показывает plug-off, когда связи нет, и
+-- player-pause, когда пауза застала без арта; собственный значок нужен
+-- ровно в одном случае — пауза при живой картинке (арт там лишь
+-- приглушён, и состояние с одного взгляда не читается).
+local function stateBadge(s)
+  if s.linked and s.status == "paused" and tostring(s.artPath or "") ~= "" then
+    return "player-pause", "secondary"
+  end
+  return nil
+end
+
+local function draw()
+  local s = snapshot
+  local text = label(s)
+  local children = { artNode(s) }
+  local badge, badgeColor = stateBadge(s)
+  if badge then
+    table.insert(children, ui.glyph({
+      key = "state",
+      name = badge,
+      size = 12,
+      color = badgeColor,
+    }))
+  end
+  if text ~= "" then
+    -- Название — sans скина; числовая подпись (позиция/длительность)
+    -- живёт в tooltip, а не в баре.
+    table.insert(children, ui.label({
+      key = "title",
+      text = text,
+      color = "on_surface",
+      fontSize = 12,
+      fontFamily = skin.FONT,
+    }))
+  end
+  barWidget.render(ui.row({
+    key = "tmus",
+    gap = 6,
+    align = "center",
+    height = BAR_H,
+  }, children))
+  barWidget.setTooltip(tooltip(s))
+end
+
+local function refresh(state)
+  snapshot = state or {}
+  draw()
+end
+
+function onClick()
+  noctalia.togglePanel(PANEL)
+end
+
+function onMiddleClick()
+  poke("next")
+end
+
+-- Спектр хоста (аудио-мост): полосы приходят строкой CSV. Пишем только
+-- лёгкий ключ "tmus.spectrum" — панель подписана на него watch'ем и
+-- перерисовывается сама; полный snapshot KEY "tmus" не трогаем.
+-- Троттлинг ≥125 мс: потолок перерисовки панели — полный draw 8 раз/с
+-- (аудит 18.09), чаще писать бессмысленно. Спектр без слушателя всё
+-- равно пишется — это один маленький ключ, дешевле, чем ветвиться.
+local SPECTRUM_MS = 125
+local lastSpectrumAt = 0
+
+function onAudioSpectrum(valuesCsv, stateCsv)
+  local now = noctalia.nowMs()
+  if now - lastSpectrumAt < SPECTRUM_MS then
+    return
+  end
+  lastSpectrumAt = now
+  noctalia.state.set("tmus.spectrum", tostring(valuesCsv or ""))
+end
+
+function onRightClick()
+  poke("toggle")
+end
+
+function onScroll(axis, steps)
+  local count = math.abs(tonumber(steps) or 0)
+  if count == 0 then
+    return
+  end
+  -- Одно агрегированное событие вместо пейла покеров на каждый шаг:
+  -- каждый poke — отдельный процесс (аудит 18.09).
+  local sign = (tonumber(steps) or 0) < 0 and "+" or "-"
+  poke("vol-by", sign .. tostring(5 * count))
+end
+
+noctalia.state.watch(KEY, refresh)
+-- Лёгкий ключ "tmus.now" (1 Гц): обновляем волатильные поля текущего
+-- snapshot точечно, вместо замены всего тяжёлого snapshot раз в секунду.
+noctalia.state.watch("tmus.now", function(now)
+  if type(now) ~= "table" or type(snapshot) ~= "table" then
+    return
+  end
+  snapshot.linked = now.linked
+  snapshot.status = now.status
+  snapshot.position = now.position
+  snapshot.duration = now.duration
+  draw()
+end)
+refresh(noctalia.state.get(KEY))
