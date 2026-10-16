@@ -3,6 +3,7 @@
 #include "render/core/render_styles.h"
 #include "shell/desktop/desktop_widget.h"
 #include "ui/palette.h"
+#include "ui/visuals/audio_visualizer_signal.h"
 
 #include <cstdint>
 
@@ -35,6 +36,7 @@ public:
       const std::unordered_map<std::string, WidgetSettingValue>& allSettings, Renderer& renderer
   ) override;
   void setEditorPreview(bool enabled) noexcept override;
+  void layout(Renderer& renderer) override;
   [[nodiscard]] bool needsFrameTick() const override;
   void onFrameTick(float deltaMs, Renderer& renderer) override;
 
@@ -69,6 +71,7 @@ private:
   std::uint64_t m_listenerId = 0;
   FancyAudioVisualizer* m_visualizer = nullptr;
   float m_shaderTime = 0.0F;
+  AudioVisualizerSignal m_signal;
   bool m_pendingSpectrumUpdate = false;
   bool m_spectrumTextureInitialized = false;
   bool m_editorPreview = false;

@@ -285,7 +285,9 @@ namespace desktop_settings {
       add(colorSpec("color_2", "primary"));
     } else if (type == "fancy_audio_visualizer") {
       const WidgetSettingVisibility barsVisible{"visualization_mode", {"bars", "bars_rings", "all"}};
-      const WidgetSettingVisibility waveVisible{"visualization_mode", {"wave", "wave_rings", "all"}};
+      const WidgetSettingVisibility waveVisible{
+          "visualization_mode", {"wave", "wave_rings", "all", "ribbons", "contour", "mist", "ornament"}
+      };
       const WidgetSettingVisibility ringsVisible{"visualization_mode", {"rings", "bars_rings", "wave_rings", "all"}};
 
       add(selectSpec(
@@ -295,7 +297,11 @@ namespace desktop_settings {
            {"rings", "desktop-widgets.editor.settings.visualization-mode-rings"},
            {"bars_rings", "desktop-widgets.editor.settings.visualization-mode-bars-rings"},
            {"wave_rings", "desktop-widgets.editor.settings.visualization-mode-wave-rings"},
-           {"all", "desktop-widgets.editor.settings.visualization-mode-all"}}
+           {"all", "desktop-widgets.editor.settings.visualization-mode-all"},
+           {"ribbons", "desktop-widgets.editor.settings.visualization-mode-ribbons"},
+           {"contour", "desktop-widgets.editor.settings.visualization-mode-contour"},
+           {"mist", "desktop-widgets.editor.settings.visualization-mode-mist"},
+           {"ornament", "desktop-widgets.editor.settings.visualization-mode-ornament"}}
       ));
       add(doubleSpec("sensitivity", 1.5, 0.5, 3.0, 0.1));
       add(doubleSpec("rotation_speed", 0.5, 0.0, 2.0, 0.1));

@@ -208,6 +208,10 @@ enum class FancyAudioVisualizerMode : std::uint8_t {
   BarsRings,
   WaveRings,
   All,
+  Ribbons,
+  Contour,
+  Mist,
+  Ornament,
 };
 
 struct FancyAudioVisualizerStyle {

@@ -1,7 +1,9 @@
 #include "shell/desktop/widgets/desktop_fancy_audio_visualizer_widget.h"
 
+#include "core/ui_phase.h"
 #include "pipewire/pipewire_spectrum.h"
 #include "render/animation/animation_manager.h"
+#include "render/animation/motion_service.h"
 #include "render/core/renderer.h"
 #include "render/scene/node.h"
 #include "ui/builders.h"
@@ -92,6 +94,14 @@ bool DesktopFancyAudioVisualizerWidget::applySetting(
         m_mode = FancyAudioVisualizerMode::WaveRings;
       } else if (*v == "all") {
         m_mode = FancyAudioVisualizerMode::All;
+      } else if (*v == "ribbons") {
+        m_mode = FancyAudioVisualizerMode::Ribbons;
+      } else if (*v == "contour") {
+        m_mode = FancyAudioVisualizerMode::Contour;
+      } else if (*v == "mist") {
+        m_mode = FancyAudioVisualizerMode::Mist;
+      } else if (*v == "ornament") {
+        m_mode = FancyAudioVisualizerMode::Ornament;
       } else {
         return false;
       }
@@ -188,19 +198,30 @@ bool DesktopFancyAudioVisualizerWidget::needsFrameTick() const {
 }
 
 void DesktopFancyAudioVisualizerWidget::onFrameTick(float deltaMs, Renderer& renderer) {
-  if (m_visualizer == nullptr) {
+  if (m_visualizer == nullptr)
     return;
-  }
-
   applyVisibility();
-  ensureSpectrumTexture(renderer);
+  syncSpectrum(renderer);
+  const bool active = m_spectrum != nullptr && !m_spectrum->idle();
+  m_signal.step(deltaMs, active);
   if (m_visible) {
-    syncSpectrum(renderer);
-    if (shouldAnimateTime()) {
-      m_shaderTime = std::fmod(m_shaderTime + std::max(0.0F, deltaMs) * 0.001F, 3600.0F);
+    m_visualizer->setAudioData(renderer.textureManager(), m_signal.spectrum(), m_signal.history());
+    m_spectrumTextureInitialized = m_visualizer->textureId() != 0;
+    if (shouldAnimateTime()
+        && m_mode <= FancyAudioVisualizerMode::All
+        && MotionService::instance().enabled()
+        && std::isfinite(deltaMs)) {
+      m_shaderTime = std::fmod(m_shaderTime + std::clamp(deltaMs, 0.0F, 250.0F) * 0.001F, 3600.0F);
       m_visualizer->setTime(m_shaderTime);
     }
   }
+}
+
+void DesktopFancyAudioVisualizerWidget::layout(Renderer& renderer) {
+  UiPhaseScope layoutPhase(UiPhase::Layout);
+  m_contentScale = m_baseScale;
+  doLayout(renderer);
+  applyBackground();
 }
 
 void DesktopFancyAudioVisualizerWidget::doLayout(Renderer& renderer) {
@@ -221,14 +242,22 @@ void DesktopFancyAudioVisualizerWidget::doUpdate(Renderer& renderer) {
 
 void DesktopFancyAudioVisualizerWidget::layoutContentSize(Renderer& renderer) {
   (void)renderer;
-  const float size = std::round(kBaseSize * m_contentScale);
+  float width = boxInnerWidth();
+  float height = boxInnerHeight();
+  if (width <= 0.0F || height <= 0.0F) {
+    const bool horizontal = m_mode == FancyAudioVisualizerMode::Ribbons
+        || m_mode == FancyAudioVisualizerMode::Contour
+        || m_mode == FancyAudioVisualizerMode::Mist;
+    width = (horizontal ? 480.0F : kBaseSize) * m_contentScale;
+    height = (horizontal ? 160.0F : kBaseSize) * m_contentScale;
+  }
   if (m_visualizer != nullptr) {
     m_visualizer->setPosition(0.0F, 0.0F);
-    m_visualizer->setSize(size, size);
+    m_visualizer->setSize(width, height);
     m_visualizer->setCornerRadius(Style::scaledRadiusLg(m_contentScale));
   }
   if (root() != nullptr) {
-    root()->setSize(size, size);
+    root()->setSize(width, height);
   }
 }
 
@@ -252,15 +281,7 @@ void DesktopFancyAudioVisualizerWidget::pullSpectrumValues(Renderer& renderer) {
     return;
   }
 
-  const auto& values = m_spectrum->values(m_listenerId);
-  if (values.empty()) {
-    ensureSpectrumTexture(renderer);
-    m_pendingSpectrumUpdate = false;
-    return;
-  }
-
-  m_visualizer->setValues(renderer.textureManager(), values);
-  m_spectrumTextureInitialized = true;
+  m_signal.accept(m_spectrum->values(m_listenerId));
   m_pendingSpectrumUpdate = false;
 }
 
@@ -289,16 +310,13 @@ void DesktopFancyAudioVisualizerWidget::syncStyle() {
 
 bool DesktopFancyAudioVisualizerWidget::shouldBeVisible() const {
   if (m_spectrum == nullptr) {
-    return false;
+    return m_editorPreview || !m_fadeWhenIdle;
   }
   return m_editorPreview || !m_fadeWhenIdle || !m_spectrum->idle();
 }
 
 bool DesktopFancyAudioVisualizerWidget::shouldAnimateTime() const {
-  if (m_spectrum == nullptr) {
-    return m_editorPreview;
-  }
-  return m_editorPreview || !m_spectrum->idle();
+  return m_visible && m_spectrum != nullptr && !m_spectrum->idle();
 }
 
 bool DesktopFancyAudioVisualizerWidget::applyVisibility() {

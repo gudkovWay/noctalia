@@ -141,6 +141,14 @@ namespace {
       return FancyAudioVisualizerMode::WaveRings;
     if (*value == "all")
       return FancyAudioVisualizerMode::All;
+    if (*value == "ribbons")
+      return FancyAudioVisualizerMode::Ribbons;
+    if (*value == "contour")
+      return FancyAudioVisualizerMode::Contour;
+    if (*value == "mist")
+      return FancyAudioVisualizerMode::Mist;
+    if (*value == "ornament")
+      return FancyAudioVisualizerMode::Ornament;
     kLog.warn("desktop widget factory: invalid fancy_audio_visualizer visualization_mode '{}'", *value);
     return std::nullopt;
   }

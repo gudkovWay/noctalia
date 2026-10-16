@@ -57,12 +57,12 @@ varying vec2 v_texcoord;
 #define MIN_VISUAL_THICKNESS 0.025
 #define MAX_VISUAL_RADIUS 0.95
 
-bool hasRings() { return u_mode >= 2.0; }
-bool hasBars() { return u_mode == 0.0 || u_mode == 3.0 || u_mode >= 5.0; }
-bool hasWave() { return u_mode == 1.0 || u_mode == 4.0 || u_mode >= 5.0; }
+bool hasRings() { return u_mode >= 2.0 && u_mode <= 5.0; }
+bool hasBars() { return u_mode == 0.0 || u_mode == 3.0 || u_mode == 5.0; }
+bool hasWave() { return u_mode == 1.0 || u_mode == 4.0 || u_mode == 5.0; }
 
 float getAudio(float pos) {
-    return texture2D(u_audio_source, vec2(clamp(pos, 0.0, 1.0), 0.5)).r;
+    return texture2D(u_audio_source, vec2((clamp(pos, 0.0, 1.0) * 31.0 + 0.5) / 128.0, 0.5)).r;
 }
 
 float smoothAudio(float pos) {
@@ -174,9 +174,7 @@ void addRings(inout vec4 color, float theta, float d, float iTime, float bass, f
 }
 
 vec4 computePolarWave(vec2 uv, float iTime, float bass, float mid, float highMid, float treble) {
-    float aspect = u_item_width / u_item_height;
-    vec2 centered = (uv - 0.5) * 2.0;
-    centered.x *= aspect;
+    vec2 centered = (uv - 0.5) * 2.0 * vec2(u_item_width, u_item_height) / min(u_item_width, u_item_height);
 
     float theta = atan(centered.y, centered.x);
     float d = length(centered);
@@ -219,9 +217,7 @@ vec4 computePolarWave(vec2 uv, float iTime, float bass, float mid, float highMid
 }
 
 vec4 computeBars(vec2 uv, float iTime, float bass, float mid, float highMid, float treble) {
-    float aspect = u_item_width / u_item_height;
-    vec2 centered = (uv - 0.5) * 2.0;
-    centered.x *= aspect;
+    vec2 centered = (uv - 0.5) * 2.0 * vec2(u_item_width, u_item_height) / min(u_item_width, u_item_height);
 
     float theta = atan(centered.y, centered.x);
     float d = length(centered);
@@ -278,9 +274,7 @@ void addBloom(inout vec4 color, vec2 uv, float iTime, float bass, float mid, flo
         return;
     }
 
-    float aspect = u_item_width / u_item_height;
-    vec2 centered = (uv - 0.5) * 2.0;
-    centered.x *= aspect;
+    vec2 centered = (uv - 0.5) * 2.0 * vec2(u_item_width, u_item_height) / min(u_item_width, u_item_height);
     float d = length(centered);
     float theta = atan(centered.y, centered.x);
 
@@ -338,6 +332,105 @@ void addBloom(inout vec4 color, vec2 uv, float iTime, float bass, float mid, flo
     color.a = min(glowAmount * bloomMult * 0.6 * max(u_primary_color.a, u_secondary_color.a), 0.8);
 }
 
+float stroke(float distancePx, float widthPx) {
+    return 1.0 - smoothstep(widthPx, widthPx + 1.0, distancePx);
+}
+
+vec4 computeRibbons(vec2 uv, bool contour) {
+    float envelope = sin(PI * uv.x);
+    vec4 color = vec4(0.0);
+    if (contour) {
+        float level = clamp(catmullAudio(uv.x), 0.0, 1.0);
+        float y = 0.72 - level * 0.52;
+        float line = stroke(abs(uv.y - y) * u_item_height, u_wave_thickness);
+        float glow = exp(-abs(uv.y - y) * u_item_height / 8.0) * level * u_bloom_intensity * 0.25;
+        return vec4(mix(u_primary_color.rgb, u_secondary_color.rgb, uv.x),
+                    max(line, glow) * max(u_primary_color.a, u_secondary_color.a));
+    }
+    for (int i = 0; i < 4; ++i) {
+        float layer = float(i);
+        float x = clamp(uv.x + (layer - 1.5) * 0.025, 0.0, 1.0);
+        float level = clamp(catmullAudio(x), 0.0, 1.0);
+        float bend = sin(uv.x * TWOPI * (1.0 + layer * 0.12) + layer * 0.8);
+        float y = 0.5 + envelope * level * bend * (0.29 - layer * 0.035);
+        float line = stroke(abs(uv.y - y) * u_item_height, u_wave_thickness * (i == 3 ? 0.5 : 1.2));
+        float glow = exp(-abs(uv.y - y) * u_item_height / 7.0) * u_bloom_intensity * 0.18 * level;
+        vec3 ink = mix(u_primary_color.rgb, u_secondary_color.rgb, layer / 3.0);
+        float a = max(line, glow) * mix(u_primary_color.a, u_secondary_color.a, layer / 3.0);
+        float combined = a + color.a * (1.0 - a);
+        color.rgb = (ink * a + color.rgb * color.a * (1.0 - a)) / max(combined, 0.00001);
+        color.a = combined;
+    }
+    return color;
+}
+
+float historyAt(float x) {
+    float p = clamp(x, 0.0, 1.0) * 127.0;
+    float a = texture2D(u_audio_source, vec2((floor(p) + 0.5) / 128.0, 0.5)).g;
+    float b = texture2D(u_audio_source, vec2((min(floor(p) + 1.0, 127.0) + 0.5) / 128.0, 0.5)).g;
+    return mix(a, b, fract(p));
+}
+
+vec4 computeMist(vec2 uv) {
+    vec4 color = vec4(0.0);
+    float taper = sin(PI * uv.x);
+    for (int i = 0; i < 3; ++i) {
+        float layer = float(i);
+        float offset = layer * 0.03;
+        float energy = (historyAt(uv.x - offset) + historyAt(uv.x - offset - 0.015)
+                       + historyAt(uv.x - offset + 0.015)) / 3.0;
+        energy = clamp(energy * u_sensitivity, 0.0, 1.0);
+        float baseline = 0.83 - layer * 0.06;
+        float ridge = baseline - taper * energy * (0.54 - layer * 0.10);
+        float edge = stroke(abs(uv.y - ridge) * u_item_height, u_wave_thickness * 0.7);
+        float fill = smoothstep(ridge - 0.01, ridge + 0.02, uv.y)
+                     * (1.0 - smoothstep(ridge, baseline + 0.03, uv.y));
+        float alpha = max(edge * 0.55, fill * (0.2 + layer * 0.1)) * taper;
+        vec3 ink = mix(u_primary_color.rgb, u_secondary_color.rgb, layer / 2.0);
+        // Front-to-back layers, using straight alpha until main premultiplies.
+        float a = alpha * mix(u_primary_color.a, u_secondary_color.a, layer / 2.0);
+        float combined = color.a + a * (1.0 - color.a);
+        color.rgb = (color.rgb * color.a + ink * a * (1.0 - color.a)) / max(combined, 0.00001);
+        color.a = combined;
+    }
+    return color;
+}
+
+float segmentDistance(vec2 p, vec2 a, vec2 b) {
+    vec2 ab = b - a;
+    return length(p - a - ab * clamp(dot(p - a, ab) / max(dot(ab, ab), 0.00001), 0.0, 1.0));
+}
+
+vec4 computeOrnament(vec2 uv) {
+    float unit = min(u_item_width, u_item_height);
+    vec2 scale = vec2(u_item_width, u_item_height) / unit;
+    float ink = 0.0;
+    float light = 0.0;
+    for (int i = 0; i < 3; ++i) {
+        float layer = float(i);
+        vec2 anchor = vec2(0.25 + layer * 0.25, 0.13);
+        vec2 p = (uv - anchor) * scale;
+        float energy = clamp(smoothAudio(layer * 0.4 + 0.05), 0.0, 1.0);
+        float angle = (layer - 1.0) * energy * 0.22;
+        vec2 end = vec2(sin(angle), cos(angle)) * (0.39 + (i == 1 ? 0.10 : 0.0));
+        ink = max(ink, stroke(segmentDistance(p, vec2(0.0), end) * unit, u_wave_thickness * 0.55));
+        ink = max(ink, stroke(abs(length(p) - 0.012) * unit, u_wave_thickness));
+        vec2 q = p - end;
+        float radius = 0.055 + energy * 0.012;
+        float edge = i == 1 ? abs(length(q) - radius) : abs(abs(q.x) + abs(q.y) - radius);
+        ink = max(ink, stroke(edge * unit, u_wave_thickness));
+        float theta = atan(q.y, q.x);
+        float ray = abs(sin(theta * 4.0));
+        float rays = (1.0 - smoothstep(0.05, 0.15, ray))
+                     * smoothstep(radius * 1.2, radius * 1.5, length(q))
+                     * (1.0 - smoothstep(radius * 1.5, radius * (1.7 + energy), length(q)));
+        light = max(light, rays * energy);
+        light = max(light, exp(-abs(length(q) - radius) * unit / 7.0) * energy * u_bloom_intensity * 0.35);
+    }
+    return vec4(mix(u_primary_color.rgb, u_secondary_color.rgb, light),
+                max(ink, light) * max(u_primary_color.a, u_secondary_color.a));
+}
+
 void main() {
     vec2 uv = v_texcoord;
     float iTime = sin(u_time * TWOPI / 3600.0) * 1800.0 + 1800.0;
@@ -348,7 +441,13 @@ void main() {
     float treble = getTreble();
 
     vec4 color;
-    if (hasWave() && !hasBars()) {
+    if (u_mode == 6.0 || u_mode == 7.0) {
+        color = computeRibbons(uv, u_mode == 7.0);
+    } else if (u_mode == 8.0) {
+        color = computeMist(uv);
+    } else if (u_mode == 9.0) {
+        color = computeOrnament(uv);
+    } else if (hasWave() && !hasBars()) {
         color = computePolarWave(uv, iTime, bass, mid, highMid, treble);
     } else if (hasBars() && !hasWave()) {
         color = computeBars(uv, iTime, bass, mid, highMid, treble);
@@ -358,7 +457,7 @@ void main() {
         color = computeBars(uv, iTime, bass, mid, highMid, treble);
     }
 
-    addBloom(color, uv, iTime, bass, mid, highMid, treble);
+    if (u_mode < 6.0) addBloom(color, uv, iTime, bass, mid, highMid, treble);
 
     vec2 fromCenter = (v_texcoord - 0.5) * 2.0;
     float edgeProximity = max(abs(fromCenter.x), abs(fromCenter.y));
@@ -390,6 +489,14 @@ void main() {
       return 4.0F;
     case FancyAudioVisualizerMode::All:
       return 5.0F;
+    case FancyAudioVisualizerMode::Ribbons:
+      return 6.0F;
+    case FancyAudioVisualizerMode::Contour:
+      return 7.0F;
+    case FancyAudioVisualizerMode::Mist:
+      return 8.0F;
+    case FancyAudioVisualizerMode::Ornament:
+      return 9.0F;
     }
     return 3.0F;
   }

@@ -4,15 +4,16 @@
 #include "render/core/texture_handle.h"
 #include "render/scene/node.h"
 
+#include <array>
 #include <cstdint>
 #include <span>
-#include <vector>
 
 class TextureManager;
 
 class FancyAudioVisualizerNode : public Node {
 public:
   static constexpr int kBandCount = 32;
+  static constexpr int kTextureWidth = 128;
 
   FancyAudioVisualizerNode() : Node(NodeType::FancyAudioVisualizer) {}
   ~FancyAudioVisualizerNode() override;
@@ -33,6 +34,7 @@ public:
   }
 
   bool setSpectrumValues(TextureManager& textures, std::span<const float> values);
+  bool setAudioData(TextureManager& textures, std::span<const float> spectrum, std::span<const float> history);
 
 private:
   void doInvalidateGpuResources(Renderer& renderer) override;
@@ -40,6 +42,7 @@ private:
   FancyAudioVisualizerStyle m_style;
   TextureManager* m_textureManager = nullptr;
   TextureHandle m_texture;
-  std::vector<std::uint8_t> m_pixels;
+  std::array<std::uint8_t, kTextureWidth * 4> m_pixels{};
+  bool m_hasPixels = false;
   int m_texWidth = 0;
 };
