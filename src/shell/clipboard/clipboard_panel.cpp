@@ -193,6 +193,7 @@ namespace {
         .fillWidth = true,
         .visible = false,
         .participatesInLayout = false,
+        .configure = [](Flex& panel) { panel.setPresentationChrome(true); },
     });
   }
 

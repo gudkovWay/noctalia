@@ -254,6 +254,7 @@ namespace settings {
             .configure =
                 [this](Flex& row) {
                   row.setRadius(Style::scaledRadiusMd(m_scale));
+                  row.setPresentationChrome(true);
                   row.setFill(colorSpecFromRole(ColorRole::SurfaceVariant, 0.45F));
                   row.setBorder(colorSpecFromRole(ColorRole::Outline), Style::borderWidth);
                 },
