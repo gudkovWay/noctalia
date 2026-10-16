@@ -111,7 +111,7 @@ namespace noctalia::instance {
     if (displayPath.filename().empty()
         || displayPath.filename() == "."
         || displayPath.filename() == ".."
-        || display.find('\0') != std::string_view::npos) {
+        || display.contains('\0')) {
       throw std::runtime_error("invalid WAYLAND_DISPLAY");
     }
     if (!displayPath.is_absolute()) {
