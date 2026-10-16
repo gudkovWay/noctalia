@@ -332,15 +332,18 @@ std::unique_ptr<Widget> WidgetFactory::create(
             return createWidget<ThemeModeWidget>(context.contentScale, f.m_themeService);
           }},
       {"tray", [](const WidgetFactory& f, const BuiltinWidgetContext& context) {
+            auto options = trayWidgetDefinition().resolve(
+                context.config, context.settingContext,
+                TrayWidgetDefinitionContext{
+                    .barPosition = context.barPosition,
+                    .inlineEntryGap = context.widgetSpacing,
+                }
+            );
+            options.fanOpener = context.name == "q_skin_runtime_tray"
+                && context.barName == "skin-runtime-status" && context.barPosition == "top";
+            if (options.fanOpener) options.drawerMode = true;
             return createWidget<TrayWidget>(
-                context.contentScale, f.m_configService, f.m_tray,
-                trayWidgetDefinition().resolve(
-                    context.config, context.settingContext,
-                    TrayWidgetDefinitionContext{
-                        .barPosition = context.barPosition,
-                        .inlineEntryGap = context.widgetSpacing,
-                    }
-                )
+                context.contentScale, f.m_configService, f.m_tray, std::move(options)
             );
           }},
       {"volume", [](const WidgetFactory& f, const BuiltinWidgetContext& context) {

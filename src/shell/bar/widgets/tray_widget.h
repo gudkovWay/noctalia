@@ -28,6 +28,9 @@ public:
     std::vector<std::string> pinnedItems;
     bool hidePassive = true;
     bool drawerMode = false;
+    // Internal presentation for the reserved Kumihimo bar; not a global tray setting.
+    bool fanOpener = false;
+    bool fanPanel = false;
     std::function<void()> itemActivated;
     std::string barPosition = "top";
     bool panelGridMode = false;
@@ -47,6 +50,7 @@ public:
   void setCapsuleCross(float cross) noexcept { m_capsuleCross = cross; }
   void create() override;
   [[nodiscard]] bool wantsBarHoverHighlight() const noexcept override { return false; }
+  void setFanReveal(float progress);
 
 private:
   struct HoverOverlayEntry {
@@ -73,6 +77,11 @@ private:
   void layoutHoverOverlays();
   void clearHoverOverlays();
   [[nodiscard]] std::optional<ColorSpec> currentAppIconColorizeTint() const;
+  void buildFanScene(Renderer& renderer);
+  void layoutFanScene(float extent);
+  void refreshFanPalette();
+  [[nodiscard]] std::unique_ptr<InputArea> createFanArea(std::size_t slot);
+  void changeFanPage(int direction);
 
   ConfigService& m_config;
   TrayService* m_tray = nullptr;
@@ -110,4 +119,18 @@ private:
   Node* m_hoverOverlayParent = nullptr;
   std::vector<HoverOverlayEntry> m_hoverOverlays;
   float m_capsuleCross = 0.0F;
+  bool m_fanOpener = false;
+  bool m_fanPanel = false;
+  float m_fanProgress = 0.0F;
+  float m_fanExtent = 0.0F;
+  std::size_t m_fanPage = 0;
+  std::size_t m_fanItemCount = 0;
+  Image* m_fanLeafTexture = nullptr; // scene-owned, retained across inventory rebuilds
+  Image* m_fanRibTexture = nullptr;
+  std::vector<Node*> m_fanLeaves;
+  std::vector<Node*> m_fanRibs;
+  std::vector<InputArea*> m_fanInputs;
+  Node* m_fanContent = nullptr;
+  Image* m_fanOutline = nullptr;
+  Node* m_fanPivot = nullptr;
 };

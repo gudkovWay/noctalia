@@ -11,6 +11,8 @@
 #include "render/scene/node.h"
 #include "render/text/glyph_registry.h"
 #include "shell/panel/panel_manager.h"
+#include "shell/tray/tray_fan_art.h"
+#include "shell/tray/tray_fan_geometry.h"
 #include "shell/tray/tray_identifier.h"
 #include "system/desktop_entry.h"
 #include "ui/app_icon_colorization.h"
@@ -171,7 +173,7 @@ TrayWidget::TrayWidget(ConfigService& config, TrayService* tray, Options options
       m_barPosition(std::move(options.barPosition)), m_panelGridMode(options.panelGridMode),
       m_panelGridColumns(std::clamp<std::size_t>(options.panelGridColumns, 1U, 5U)),
       m_inlineEntryGap(std::max(0.0F, options.inlineEntryGap)), m_matchAdjacentSpacing(options.matchAdjacentSpacing),
-      m_customItemSize(options.customItemSize) {
+      m_customItemSize(options.customItemSize), m_fanOpener(options.fanOpener), m_fanPanel(options.fanPanel) {
   auto normalizeTokens = [](std::vector<std::string>& tokens) {
     std::vector<std::string> normalized;
     normalized.reserve(tokens.size());
@@ -242,11 +244,15 @@ float TrayWidget::resolvedInlineEntryGap() const {
 }
 
 std::optional<ColorSpec> TrayWidget::currentAppIconColorizeTint() const {
+  if (m_fanPanel)
+    return colorSpecFromRole(ColorRole::OnSurface);
   return effectiveShellAppIconColorizationTint(m_config.config().shell);
 }
 
 void TrayWidget::refreshAppIconColorization(Renderer& renderer) {
   (void)renderer;
+  if (m_fanPanel)
+    refreshFanPalette();
   const auto tint = currentAppIconColorizeTint();
   for (Image* image : m_colorizedAppIcons) {
     if (image != nullptr) {
@@ -280,6 +286,24 @@ void TrayWidget::create() {
 
 void TrayWidget::doLayout(Renderer& renderer, float containerWidth, float containerHeight) {
   if (m_container == nullptr) {
+    return;
+  }
+  if (m_fanPanel) {
+    const float extent = std::max(1.0F, std::min(containerWidth, containerHeight));
+    if (std::abs(m_fanExtent - extent) > 0.5F) {
+      m_fanExtent = extent;
+      m_rebuildPending = true;
+    }
+    syncState(renderer);
+    if (m_rebuildPending) {
+      rebuild(renderer);
+      m_rebuildPending = false;
+    }
+    if (m_appIconColorizeDirty) {
+      refreshAppIconColorization(renderer);
+      m_appIconColorizeDirty = false;
+    }
+    layoutFanScene(extent);
     return;
   }
   if (m_drawerMode && m_drawerChevron != nullptr && m_drawerTrigger != nullptr) {
@@ -454,9 +478,26 @@ void TrayWidget::rebuild(Renderer& renderer) {
   m_colorizedAppIcons.clear();
 
   clearHoverOverlays();
+  auto retainedFanTexture = m_fanLeafTexture != nullptr ? m_container->removeChild(m_fanLeafTexture) : nullptr;
+  auto retainedFanRibs = m_fanRibTexture != nullptr ? m_container->removeChild(m_fanRibTexture) : nullptr;
 
   while (!m_container->children().empty()) {
     m_container->removeChild(m_container->children().back().get());
+  }
+  if (retainedFanTexture)
+    m_container->addChild(std::move(retainedFanTexture));
+  if (retainedFanRibs)
+    m_container->addChild(std::move(retainedFanRibs));
+  m_fanLeaves.clear();
+  m_fanRibs.clear();
+  m_fanInputs.clear();
+  m_fanContent = nullptr;
+  m_fanOutline = nullptr;
+  m_fanPivot = nullptr;
+  if (m_fanOpener || m_fanPanel) {
+    buildFanScene(renderer);
+    if (m_fanOpener)
+      return;
   }
 
   auto attachHover = [this](InputArea& area, float size) {
@@ -569,7 +610,7 @@ void TrayWidget::rebuild(Renderer& renderer) {
           } else if (m_barPosition == "right") {
             anchorX -= triggerPtr->width() * 0.5F + Style::spaceXs * m_contentScale;
           }
-          requestPanelToggle("tray-drawer", {}, anchorX, anchorY);
+          requestPanelToggle("tray-drawer", configName(), anchorX, anchorY);
         }
       });
       const bool panelOpen = PanelManager::instance().isOpenPanel("tray-drawer");
@@ -592,6 +633,10 @@ void TrayWidget::rebuild(Renderer& renderer) {
 
   Flex* gridRow = nullptr;
   std::size_t gridCol = 0;
+  const tray::FanLayout fanLayout(
+      m_fanItemCount, m_fanPage, m_fanExtent > 0 ? m_fanExtent : tray::kFanExtent * m_contentScale
+  );
+  std::size_t visibleIndex = 0;
   for (const auto& item : m_items) {
     if ((m_hidePassive && tray::isPassiveStatus(item)) || isHiddenItem(item)) {
       continue;
@@ -599,11 +644,19 @@ void TrayWidget::rebuild(Renderer& renderer) {
     if (m_drawerMode && !isPinnedItem(item)) {
       continue;
     }
-    if (m_panelGridMode && isPinnedItem(item)) {
+    if (m_panelGridMode && !m_fanPanel && isPinnedItem(item)) {
       continue;
     }
+    std::size_t fanSlot = 0;
+    if (m_fanPanel) {
+      const auto index = visibleIndex++;
+      if (index < fanLayout.first() || index >= fanLayout.first() + fanLayout.count())
+        continue;
+      fanSlot = index - fanLayout.first();
+    }
     const std::string iconPath = resolveIconPath(item);
-    const float itemSize = m_customItemSize.value_or(Style::baseGlyphSize) * m_contentScale;
+    const float itemSize = m_fanPanel ? tray::kFanIconSize * fanLayout.scale()
+                                      : m_customItemSize.value_or(Style::baseGlyphSize) * m_contentScale;
     const float iconSize = itemSize;
     const int iconRequestSize = std::max(32, static_cast<int>(std::round(iconSize * 2.0F)));
 
@@ -623,8 +676,10 @@ void TrayWidget::rebuild(Renderer& renderer) {
         image->setAppIconColorization(appIconTint);
       }
       bool loadedFromFile = false;
-      const Color symbolicColor = resolveColorSpec(widgetIconColorOr(colorSpecFromRole(ColorRole::OnSurface)));
-      if (symbolicPath && isSvgPath(iconPath)) {
+      const Color symbolicColor = m_fanPanel
+          ? rgba(1.0F, 1.0F, 1.0F)
+          : resolveColorSpec(widgetIconColorOr(colorSpecFromRole(ColorRole::OnSurface)));
+      if (symbolicPath && (m_fanPanel || isSvgPath(iconPath))) {
         if (auto symbolic = loadSymbolicTrayIcon(iconPath, iconRequestSize, symbolicColor)) {
           loadedFromFile = image->setSourceRaw(
               renderer, symbolic->rgba.data(), symbolic->rgba.size(), symbolic->width, symbolic->height, 0,
@@ -637,7 +692,9 @@ void TrayWidget::rebuild(Renderer& renderer) {
       }
 
       if (loadedFromFile) {
-        if (symbolicPath && !isSvgPath(iconPath)) {
+        if (m_fanPanel && symbolicPath) {
+          image->setForegroundTint(colorSpecFromRole(ColorRole::OnSurface));
+        } else if (symbolicPath && !isSvgPath(iconPath)) {
           image->setTint(symbolicColor);
         }
         iconW = iconSize;
@@ -749,6 +806,7 @@ void TrayWidget::rebuild(Renderer& renderer) {
           .glyph = fallback,
           .glyphSize = iconSize,
           .color = item.needsAttention ? colorSpecFromRole(ColorRole::Error)
+              : m_fanPanel             ? colorSpecFromRole(ColorRole::OnSurface)
                                        : widgetIconColorOr(colorSpecFromRole(ColorRole::OnSurface)),
       });
       glyph->measure(renderer);
@@ -770,14 +828,19 @@ void TrayWidget::rebuild(Renderer& renderer) {
     }
 
     // Wrap icon in InputArea for click handling
-    auto area = ui::inputArea({});
-    area->setSize(itemSize, itemSize);
-    iconNode->setPosition(std::round((itemSize - iconW) * 0.5F), std::round((itemSize - iconH) * 0.5F));
+    auto area = m_fanPanel ? createFanArea(fanSlot) : ui::inputArea({});
+    if (!m_fanPanel)
+      area->setSize(itemSize, itemSize);
+    const auto appPoint = m_fanPanel ? fanLayout.appPosition(fanSlot) : tray::FanPoint{0, 0};
+    iconNode->setPosition(
+        m_fanPanel ? appPoint.x - iconW * 0.5F : std::round((itemSize - iconW) * 0.5F),
+        m_fanPanel ? appPoint.y - iconH * 0.5F : std::round((itemSize - iconH) * 0.5F)
+    );
     auto itemId = item.id;
     area->setAcceptedButtons(InputArea::buttonMask({BTN_LEFT, BTN_RIGHT}));
     InputArea* areaPtr = area.get();
     area->setOnClick([this, itemId, areaPtr](const InputArea::PointerData& data) {
-      if (m_tray == nullptr) {
+      if (m_tray == nullptr || (m_fanPanel && !tray::fanActionsEnabled(m_fanProgress))) {
         return;
       }
       const auto [x, y] = trayPointerCoords(*areaPtr, data);
@@ -794,10 +857,17 @@ void TrayWidget::rebuild(Renderer& renderer) {
         }
       }
     });
+    if (m_fanPanel)
+      area->setTooltipAnchorNode(iconNode.get());
     area->addChild(std::move(iconNode));
 
     if (const std::string tooltipText = tray::formatTrayItemTooltip(item); !tooltipText.empty()) {
       area->setTooltip(tooltipText);
+    }
+    if (m_fanPanel) {
+      m_fanInputs.push_back(area.get());
+      m_fanContent->insertChildAt(fanSlot, std::move(area));
+      continue;
     }
 
     attachHover(*area, itemSize);
@@ -818,6 +888,8 @@ void TrayWidget::rebuild(Renderer& renderer) {
       m_container->addChild(std::move(area));
     }
   }
+  if (m_fanPanel)
+    layoutFanScene(fanLayout.scale() * tray::kFanExtent);
 
   m_container->setVisible(!m_container->children().empty());
 }
@@ -933,9 +1005,10 @@ std::string TrayWidget::resolveIconPath(const TrayItemInfo& item) {
   }
 
   // Match the on-screen request size used when the icon is loaded (see rebuild).
-  const int iconTargetSize = std::max(
-      32, static_cast<int>(std::round(m_customItemSize.value_or(Style::baseGlyphSize) * m_contentScale * 2.0F))
-  );
+  const float resolvedIconSize = m_fanPanel
+      ? tray::kFanIconSize * (m_fanExtent > 0 ? m_fanExtent / tray::kFanExtent : m_contentScale)
+      : m_customItemSize.value_or(Style::baseGlyphSize) * m_contentScale;
+  const int iconTargetSize = std::max(32, static_cast<int>(std::round(resolvedIconSize * 2.0F)));
 
   auto resolveMapped = [this, iconTargetSize](const std::string& name) -> std::string {
     if (name.empty()) {

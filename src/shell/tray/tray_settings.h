@@ -9,8 +9,8 @@ class ConfigService;
 
 namespace tray {
 
-  // Canonical settings for the singleton drawer and menu surfaces. Bar-embedded
-  // tray widgets resolve their own, possibly differently named, entries.
+  // Singleton surfaces default to the canonical tray; drawer openers pass their
+  // originating instance so filters and item sizing match the clicked widget.
   inline constexpr std::string_view kCanonicalTrayWidgetName = "tray";
 
   struct ResolvedTrayOptions {
@@ -18,8 +18,12 @@ namespace tray {
     std::optional<float> drawerItemSize;
   };
 
-  [[nodiscard]] ResolvedTrayOptions
-  resolvedTrayOptions(const ConfigService& config, const TrayWidgetDefinitionContext& context = {});
-  [[nodiscard]] WidgetBarCapsuleSpec resolvedTrayCapsuleSpec(const ConfigService& config, const BarConfig& bar);
+  [[nodiscard]] ResolvedTrayOptions resolvedTrayOptions(
+      const ConfigService& config, const TrayWidgetDefinitionContext& context = {},
+      std::string_view widgetName = kCanonicalTrayWidgetName
+  );
+  [[nodiscard]] WidgetBarCapsuleSpec resolvedTrayCapsuleSpec(
+      const ConfigService& config, const BarConfig& bar, std::string_view widgetName = kCanonicalTrayWidgetName
+  );
 
 } // namespace tray
