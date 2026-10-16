@@ -541,7 +541,7 @@ namespace noctalia::theme {
       notifyShellAppIconColorizationChanged();
       startTransition(resolved->palette);
     } else {
-      if (m_transitionAnimId == 0 && palette == resolved->palette) {
+      if (m_transitionAnimId == 0 && basePalette() == resolved->palette) {
         flushResolvedCallback(/*defer=*/false);
         rescheduleAutoTimer();
         return;
@@ -581,7 +581,11 @@ namespace noctalia::theme {
   }
 
   void ThemeService::startTransition(const Palette& target) {
-    if (m_transitionAnimId == 0 && palette == target) {
+    // Seed from the base palette rather than the displayed one: while a presentation
+    // overlay is active the displayed palette carries overlay colors, which must not
+    // bleed into the base cross-fade that runs underneath it.
+    const Palette base = basePalette();
+    if (m_transitionAnimId == 0 && base == target) {
       flushResolvedCallback(/*defer=*/false);
       return;
     }
@@ -589,13 +593,13 @@ namespace noctalia::theme {
       flushResolvedCallback(/*defer=*/true);
       return;
     }
-    // Capture the currently-displayed palette (possibly mid-fade) so a new
-    // transition starts from wherever the previous one had reached.
+    // Capture the current base palette (possibly mid-fade) so a new transition
+    // starts from wherever the previous one had reached.
     if (m_transitionAnimId != 0) {
       m_animations.cancel(m_transitionAnimId);
       m_transitionAnimId = 0;
     }
-    m_fromPalette = palette;
+    m_fromPalette = base;
     m_targetPalette = target;
     m_transitionResolvedCallbackFlushed = false;
     m_transitionAnimId = m_animations.animate(
