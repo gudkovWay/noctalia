@@ -1,7 +1,10 @@
+#include "pipewire/pipewire_service.h"
+#include "pipewire/pipewire_spectrum.h"
 #include "render/backend/gles_texture_manager.h"
 #include "render/core/render_styles.h"
 #include "render/programs/fancy_audio_visualizer_program.h"
 #include "render/scene/fancy_audio_visualizer_node.h"
+#include "shell/desktop/desktop_widget_factory.h"
 #include "shell/desktop/desktop_widget_settings_registry.h"
 #include "test_check.h"
 
@@ -16,6 +19,7 @@
 #include <filesystem>
 #include <limits>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -86,6 +90,20 @@ int main() {
     program.ensureInitialized();
     std::array<float, 32> spectrum{};
     std::array<float, 128> history{};
+    const auto paint = [&](const FancyAudioVisualizerNode& visual, int width, int height) {
+      glViewport(0, 0, width, height);
+      glDisable(GL_BLEND);
+      glClearColor(0, 0, 0, 0);
+      glClear(GL_COLOR_BUFFER_BIT);
+      program.draw(
+          visual.textureId(), static_cast<float>(width), static_cast<float>(height), static_cast<float>(width),
+          static_cast<float>(height), visual.style()
+      );
+      std::vector<unsigned char> pixels(static_cast<std::size_t>(width * height * 4));
+      glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+      TEST_CHECK(glGetError() == GL_NO_ERROR);
+      return pixels;
+    };
     const auto render = [&](FancyAudioVisualizerMode mode, int width, int height, bool paletteProbe = false) {
       node.setAudioData(textures, spectrum, history);
       TEST_CHECK(node.textureWidth() == 128);
@@ -95,18 +113,8 @@ int main() {
       style.cornerRadius = 0.0F;
       style.primaryColor = paletteProbe ? rgba(1.0F, 0.0F, 0.0F, 1.0F) : rgba(0.25F, 0.65F, 0.9F, 0.9F);
       style.secondaryColor = paletteProbe ? rgba(0.0F, 0.0F, 1.0F, 1.0F) : rgba(0.8F, 0.5F, 0.4F, 0.85F);
-      glViewport(0, 0, width, height);
-      glDisable(GL_BLEND);
-      glClearColor(0, 0, 0, 0);
-      glClear(GL_COLOR_BUFFER_BIT);
-      program.draw(
-          node.textureId(), static_cast<float>(width), static_cast<float>(height), static_cast<float>(width),
-          static_cast<float>(height), style
-      );
-      std::vector<unsigned char> pixels(static_cast<std::size_t>(width * height * 4));
-      glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-      TEST_CHECK(glGetError() == GL_NO_ERROR);
-      return pixels;
+      node.setStyle(style);
+      return paint(node, width, height);
     };
     for (std::size_t mode = 0; mode < modes.size(); ++mode) {
       for (const auto [width, height] : std::array{std::pair{480, 180}, std::pair{300, 300}, std::pair{180, 480}}) {
@@ -141,6 +149,53 @@ int main() {
         );
       }
     }
+    // Exercise the real desktop factory: distinct types must not all fall back to a circle.
+    const auto runtime =
+        std::filesystem::temp_directory_path() / ("noctalia-audio-render-" + std::to_string(::getpid()));
+    std::filesystem::create_directories(runtime);
+    ::setenv("PIPEWIRE_RUNTIME_DIR", runtime.c_str(), 1);
+    ::setenv("PIPEWIRE_REMOTE", "noctalia-test-no-daemon", 1);
+    {
+      PipeWireService audio;
+      PipeWireSpectrum sharedSpectrum(audio);
+      DesktopWidgetFactory factory({.pipewireSpectrum = &sharedSpectrum});
+      constexpr std::array types{"audio_ribbons",   "audio_contour", "audio_radial_bars",
+                                 "audio_wave_ring", "audio_mist",    "audio_ornament"};
+      std::array<std::vector<unsigned char>, types.size()> images;
+      const auto findVisual = [](const auto& self, Node* root) -> FancyAudioVisualizerNode* {
+        if (auto* visual = dynamic_cast<FancyAudioVisualizerNode*>(root))
+          return visual;
+        for (const auto& child : root->children())
+          if (auto* visual = self(self, child.get()))
+            return visual;
+        return nullptr;
+      };
+      for (std::size_t band = 0; band < spectrum.size(); ++band)
+        spectrum[band] = 0.1F + 0.6F * std::pow(std::sin(static_cast<float>(band) * 0.3F), 2.0F);
+      for (std::size_t sample = 0; sample < history.size(); ++sample)
+        history[sample] = sample % 19 < 5 ? 0.6F : 0.05F;
+      for (std::size_t i = 0; i < types.size(); ++i) {
+        auto widget = factory.create(
+            types[i],
+            {{"primary_color", std::string("#40a6e6")},
+             {"secondary_color", std::string("#cc8066")},
+             {"sensitivity", 1.3},
+             {"wave_thickness", 1.0},
+             {"bloom_intensity", 0.0},
+             {"rotation_speed", 0.0}}
+        );
+        TEST_CHECK(widget != nullptr);
+        widget->create();
+        auto* visual = findVisual(findVisual, widget->root());
+        TEST_CHECK(visual != nullptr);
+        visual->setAudioData(textures, spectrum, history);
+        images[i] = paint(*visual, 300, 300);
+        for (std::size_t previous = 0; previous < i; ++previous)
+          TEST_CHECK(images[previous] != images[i]);
+        capture(images[i], 300, 300, std::string("widget-") + types[i]);
+      }
+    }
+    std::filesystem::remove_all(runtime);
     // Mist must use history, not instantaneous spectrum, and old modes must not use history.
     spectrum.fill(0.5F);
     history.fill(0.0F);

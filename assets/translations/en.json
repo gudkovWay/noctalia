@@ -679,6 +679,12 @@
       "title-lockscreen": "Lockscreen Widgets",
       "types": {
         "audio-visualizer": "Audio Visualizer",
+        "audio-ribbons": "Audio: Ribbons",
+        "audio-contour": "Audio: Spectral Contour",
+        "audio-radial-bars": "Audio: Radial Bars",
+        "audio-wave-ring": "Audio: Wave Ring",
+        "audio-mist": "Audio: Mist Ridges",
+        "audio-ornament": "Audio: Reactive Ornament",
         "button": "Button",
         "calendar": "Calendar",
         "clock": "Clock",

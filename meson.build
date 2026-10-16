@@ -1219,6 +1219,7 @@ if build_tests
     'cpu_temp_sensor',
     'desktop_entry_launch',
     'desktop_entry_localization',
+    'desktop_audio_visualizer_presets',
     'disk_mounts',
     'dock_edge_overlap',
     'dock_pinned_apps',

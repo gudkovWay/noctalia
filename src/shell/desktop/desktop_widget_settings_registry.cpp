@@ -3,6 +3,7 @@
 #include "i18n/i18n.h"
 #include "scripting/plugin_i18n.h"
 #include "scripting/plugin_registry.h"
+#include "shell/desktop/desktop_audio_visualizer_presets.h"
 #include "shell/settings/font_family_catalog.h"
 #include "shell/settings/widget_settings_registry.h"
 #include "util/string_utils.h"
@@ -21,6 +22,12 @@ namespace desktop_settings {
 
     const std::vector<DesktopWidgetTypeSpec> kDesktopWidgetTypeSpecs = {
         {.type = "audio_visualizer", .labelKey = "desktop-widgets.editor.types.audio-visualizer"},
+        {.type = "audio_ribbons", .labelKey = "desktop-widgets.editor.types.audio-ribbons"},
+        {.type = "audio_contour", .labelKey = "desktop-widgets.editor.types.audio-contour"},
+        {.type = "audio_radial_bars", .labelKey = "desktop-widgets.editor.types.audio-radial-bars"},
+        {.type = "audio_wave_ring", .labelKey = "desktop-widgets.editor.types.audio-wave-ring"},
+        {.type = "audio_mist", .labelKey = "desktop-widgets.editor.types.audio-mist"},
+        {.type = "audio_ornament", .labelKey = "desktop-widgets.editor.types.audio-ornament"},
         {.type = "button", .labelKey = "desktop-widgets.editor.types.button"},
         {.type = "calendar", .labelKey = "desktop-widgets.editor.types.calendar"},
         {.type = "clock", .labelKey = "desktop-widgets.editor.types.clock"},
@@ -186,7 +193,8 @@ namespace desktop_settings {
     }
 
     const WidgetSettingVisibility backgroundOn{"background", {"true"}};
-    const bool backgroundDefault = type != "fancy_audio_visualizer" && type != "jelly_cat";
+    const bool backgroundDefault =
+        type != "fancy_audio_visualizer" && type != "jelly_cat" && desktop_audio::preset(type) == nullptr;
 
     auto bgColor = colorSpec("background_color", "surface");
     bgColor.visibleWhen = backgroundOn;
@@ -283,6 +291,23 @@ namespace desktop_settings {
       add(boolSpec("show_when_idle", true));
       add(colorSpec("color_1", "primary"));
       add(colorSpec("color_2", "primary"));
+    } else if (const auto* preset = desktop_audio::preset(type)) {
+      add(doubleSpec("sensitivity", preset->sensitivity, 0.5, 3.0, 0.1));
+      const bool polar =
+          preset->mode == FancyAudioVisualizerMode::Bars || preset->mode == FancyAudioVisualizerMode::Wave;
+      if (polar) {
+        add(doubleSpec("rotation_speed", 0.0, 0.0, 2.0, 0.1));
+        add(doubleSpec("inner_diameter", 0.7, 0.0, 1.0, 0.05));
+      }
+      if (preset->mode == FancyAudioVisualizerMode::Bars)
+        add(doubleSpec("bar_width", 0.6, 0.2, 1.0, 0.1));
+      else
+        add(doubleSpec("wave_thickness", preset->thickness, 0.3, 2.0, 0.1));
+      if (preset->mode != FancyAudioVisualizerMode::Mist)
+        add(doubleSpec("bloom_intensity", preset->bloom, 0.0, 1.0, 0.05));
+      add(boolSpec("fade_when_idle", false));
+      add(colorSpec("primary_color", "primary"));
+      add(colorSpec("secondary_color", "secondary"));
     } else if (type == "fancy_audio_visualizer") {
       const WidgetSettingVisibility barsVisible{"visualization_mode", {"bars", "bars_rings", "all"}};
       const WidgetSettingVisibility waveVisible{

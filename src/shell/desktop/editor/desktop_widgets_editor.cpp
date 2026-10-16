@@ -18,6 +18,7 @@
 #include "render/scene/input_area.h"
 #include "render/scene/node.h"
 #include "render/scene/wallpaper_node.h"
+#include "shell/desktop/desktop_audio_visualizer_presets.h"
 #include "shell/desktop/desktop_widget_layout.h"
 #include "shell/desktop/desktop_widget_settings_registry.h"
 #include "shell/desktop/widgets/desktop_login_box_widget.h"
@@ -796,9 +797,7 @@ void DesktopWidgetsEditor::rebuildScene(OverlaySurface& surface) {
     }
 
     widget->create();
-    if (widgetState.type == "audio_visualizer"
-        || widgetState.type == "fancy_audio_visualizer"
-        || widgetState.type == "button") {
+    if (desktop_audio::isVisualizer(widgetState.type) || widgetState.type == "button") {
       widget->setEditorPreview(true);
     }
     widget->setAnimationManager(&surface.animations);
@@ -826,8 +825,7 @@ void DesktopWidgetsEditor::rebuildScene(OverlaySurface& surface) {
     widget->setBox(widgetState.boxWidth, widgetState.boxHeight);
     widget->update(renderer);
     widget->layout(renderer);
-    if ((widgetState.type == "audio_visualizer" || widgetState.type == "fancy_audio_visualizer")
-        && surface.surface != nullptr) {
+    if (desktop_audio::isVisualizer(widgetState.type) && surface.surface != nullptr) {
       surface.surface->requestFrameTick();
     }
 
@@ -1554,6 +1552,11 @@ void DesktopWidgetsEditor::addWidget(const std::string& outputName, const std::s
   widget.boxWidth = 0.0F;
   widget.boxHeight = 0.0F;
   widget.rotationRad = 0.0F;
+  if (const auto* preset = desktop_audio::preset(widget.type)) {
+    widget.boxWidth = preset->width;
+    widget.boxHeight = preset->height;
+    desktop_settings::applyAllDesktopWidgetDefaultSettings(widget.settings, widget.type);
+  }
   if (widget.type == "audio_visualizer") {
     widget.settings.emplace("bands", static_cast<std::int64_t>(32));
     widget.settings.emplace("show_when_idle", true);

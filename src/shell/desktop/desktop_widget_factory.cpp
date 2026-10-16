@@ -4,6 +4,7 @@
 #include "core/log.h"
 #include "scripting/plugin_registry.h"
 #include "scripting/plugin_runtime_context.h"
+#include "shell/desktop/desktop_audio_visualizer_presets.h"
 #include "shell/desktop/widgets/desktop_audio_visualizer_widget.h"
 #include "shell/desktop/widgets/desktop_button_widget.h"
 #include "shell/desktop/widgets/desktop_calendar_widget.h"
@@ -248,6 +249,32 @@ std::unique_ptr<DesktopWidget> DesktopWidgetFactory::create(
         }
     );
     applyCommonSettings(*widget, settings);
+    widget->setContentScale(contentScale);
+    return widget;
+  }
+
+  if (const auto* preset = desktop_audio::preset(type)) {
+    if (m_pipewireSpectrum == nullptr) {
+      kLog.warn("desktop widget factory: {} requires PipeWireSpectrum", type);
+      return nullptr;
+    }
+    auto widget = std::make_unique<DesktopFancyAudioVisualizerWidget>(
+        m_pipewireSpectrum,
+        DesktopFancyAudioVisualizerWidget::Options{
+            .mode = preset->mode,
+            .sensitivity = getFloatSetting(settings, "sensitivity", preset->sensitivity),
+            .rotationSpeed = getFloatSetting(settings, "rotation_speed", 0.0F),
+            .barWidth = getFloatSetting(settings, "bar_width", 0.6F),
+            .bloomIntensity = getFloatSetting(settings, "bloom_intensity", preset->bloom),
+            .waveThickness = getFloatSetting(settings, "wave_thickness", preset->thickness),
+            .innerDiameter = getFloatSetting(settings, "inner_diameter", 0.7F),
+            .fadeWhenIdle = getBoolSetting(settings, "fade_when_idle", false),
+            .primaryColor = getColorSpecSetting(settings, "primary_color", colorSpecFromRole(ColorRole::Primary)),
+            .secondaryColor = getColorSpecSetting(settings, "secondary_color", colorSpecFromRole(ColorRole::Secondary)),
+        }
+    );
+    widget->setBox(preset->width, preset->height);
+    applyCommonSettings(*widget, settings, false);
     widget->setContentScale(contentScale);
     return widget;
   }

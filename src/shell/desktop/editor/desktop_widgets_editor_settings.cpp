@@ -4,6 +4,7 @@
 #include "render/core/render_styles.h"
 #include "render/render_context.h"
 #include "render/scene/input_area.h"
+#include "shell/desktop/desktop_audio_visualizer_presets.h"
 #include "shell/desktop/desktop_widget_settings_registry.h"
 #include "shell/desktop/editor/desktop_widgets_editor.h"
 #include "shell/lockscreen/lockscreen_login_box.h"
@@ -980,7 +981,7 @@ void DesktopWidgetsEditor::applySettingChange(const std::string& key, WidgetSett
     }
 
     newWidget->create();
-    if (state->type == "audio_visualizer" || state->type == "fancy_audio_visualizer" || state->type == "button") {
+    if (desktop_audio::isVisualizer(state->type) || state->type == "button") {
       newWidget->setEditorPreview(true);
     }
     newWidget->setAnimationManager(&surface->animations);
@@ -1018,7 +1019,7 @@ void DesktopWidgetsEditor::applySettingChange(const std::string& key, WidgetSett
     view.widget = std::move(newWidget);
 
     applyViewState(view, *state, false);
-    if ((state->type == "audio_visualizer" || state->type == "fancy_audio_visualizer") && surface->surface != nullptr) {
+    if (desktop_audio::isVisualizer(state->type) && surface->surface != nullptr) {
       surface->surface->requestFrameTick();
     }
     updateSelectionVisuals(*surface);

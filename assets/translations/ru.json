@@ -679,6 +679,12 @@
       "title-lockscreen": "Виджеты экрана блокировки",
       "types": {
         "audio-visualizer": "Аудиовизуализатор",
+        "audio-ribbons": "Аудио: Ленты",
+        "audio-contour": "Аудио: Спектральный контур",
+        "audio-radial-bars": "Аудио: Радиальные полосы",
+        "audio-wave-ring": "Аудио: Кольцо-волна",
+        "audio-mist": "Аудио: Туманные гряды",
+        "audio-ornament": "Аудио: Реактивный орнамент",
         "button": "Кнопка",
         "calendar": "Календарь",
         "clock": "Часы",
