@@ -192,7 +192,11 @@ std::string keyChordDisplayLabel(const KeyChord& chord) {
 }
 
 bool keyChordMatches(const KeyChord& chord, std::uint32_t sym, std::uint32_t modifiers) noexcept {
-  return chord.sym == sym && chord.modifiers == modifiers;
+  // Name lookup is case-insensitive, but Shift makes XKB events uppercase.
+  // Keep modifiers exact and preserve unshifted key matching.
+  return chord.modifiers == modifiers
+      && (chord.sym == sym
+          || ((modifiers & KeyMod::Shift) != 0 && xkb_keysym_to_lower(chord.sym) == xkb_keysym_to_lower(sym)));
 }
 
 bool isPrintableKey(std::uint32_t sym) {
