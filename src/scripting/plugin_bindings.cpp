@@ -482,6 +482,11 @@ namespace {
       kLog.warn("plugin {}: ui tree deeper than {} levels, subtree dropped", read.ownerId, kUiTreeMaxDepth);
       return false;
     }
+    // Native recursion does not extend Luau's C API frame for props/children/handler temporaries.
+    if (!lua_checkstack(L, LUA_MINSTACK)) {
+      kLog.warn("plugin {}: insufficient VM stack for ui tree", read.ownerId);
+      return false;
+    }
     if (!lua_istable(L, index)) {
       kLog.warn("plugin {}: ui tree node is not a table", read.ownerId);
       return false;

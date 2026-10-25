@@ -173,6 +173,37 @@ order = ["a", "b"]
     ok = expect(!context.patch.uiTree->props.contains("key"), "key should never remain a prop") && ok;
   }
 
+  context.patch = {};
+  ok = expect(
+           runLuau(state, "=deep-ui-tree", R"(
+deepClicked=false
+local tree=ui.button({key='deep-leaf',text='Leaf',onClick=function() deepClicked=true end})
+for i=1,32 do tree=ui.column({key='level-'..i},{tree}) end
+panel.render(tree)
+)"),
+           "a UI tree within the declared depth limit exhausted the VM stack"
+       )
+      && ok;
+  const ui::UiTreeNode* deepLeaf = context.patch.uiTree ? &*context.patch.uiTree : nullptr;
+  for (int depth = 0; depth < 32 && deepLeaf != nullptr; ++depth) {
+    deepLeaf = deepLeaf->children.size() == 1 ? &deepLeaf->children.front() : nullptr;
+  }
+  ok = expect(deepLeaf != nullptr && deepLeaf->key == "deep-leaf", "deep UI subtree was silently dropped") && ok;
+  if (deepLeaf != nullptr) {
+    const auto handler = deepLeaf->props.find("onClick");
+    const auto* name = handler == deepLeaf->props.end() ? nullptr : std::get_if<std::string>(&handler->second);
+    ok = expect(name != nullptr, "deep UI callback was lost") && ok;
+    if (name != nullptr) {
+      lua_getglobal(state, scripting::kUiHandlerTable);
+      lua_getfield(state, -1, name->c_str());
+      ok = expect(lua_pcall(state, 0, 0, 0) == 0, "deep UI callback could not run") && ok;
+      lua_pop(state, 1);
+      lua_getglobal(state, "deepClicked");
+      ok = expect(lua_toboolean(state, -1), "deep UI callback did not reach its original closure") && ok;
+      lua_pop(state, 1);
+    }
+  }
+
   // A function-valued callback prop is registered in the render's handler table
   // and the tree carries the generated name in its place.
   context.patch = {};
