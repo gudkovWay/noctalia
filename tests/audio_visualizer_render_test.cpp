@@ -2,6 +2,7 @@
 #include "pipewire/pipewire_spectrum.h"
 #include "render/backend/gles_texture_manager.h"
 #include "render/core/render_styles.h"
+#include "render/core/renderer.h"
 #include "render/programs/fancy_audio_visualizer_program.h"
 #include "render/scene/fancy_audio_visualizer_node.h"
 #include "shell/desktop/desktop_widget_factory.h"
@@ -27,6 +28,34 @@ namespace {
                              FancyAudioVisualizerMode::Bars,    FancyAudioVisualizerMode::Wave,
                              FancyAudioVisualizerMode::Mist,    FancyAudioVisualizerMode::Ornament};
   constexpr std::array names{"ribbons", "contour", "bars", "wave", "mist", "ornament"};
+
+  // Tick-time uploads need a current shared context, not the widget's draw surface.
+  class UploadRenderer final : public Renderer {
+  public:
+    explicit UploadRenderer(TextureManager& textures) : m_textures(textures) {}
+    TextMetrics measureText(
+        std::string_view, float, FontWeight, float, int, TextAlign, std::string_view, TextEllipsize, bool
+    ) override {
+      std::abort();
+    }
+    TextMetrics measureFont(float, FontWeight) override { std::abort(); }
+    void measureTextCursorStops(
+        std::string_view, float, const std::vector<std::size_t>&, std::vector<float>&, FontWeight
+    ) override {
+      std::abort();
+    }
+    void measureTextCursorStopsWrapped(
+        std::string_view, float, const std::vector<std::size_t>&, float, std::vector<TextCursorStop>&, FontWeight
+    ) override {
+      std::abort();
+    }
+    TextMetrics measureGlyph(char32_t, float) override { std::abort(); }
+    TextureManager& textureManager() override { return m_textures; }
+    float renderScale() const noexcept override { return 1.0F; }
+
+  private:
+    TextureManager& m_textures;
+  };
 
   void capture(const std::vector<unsigned char>& rgba, int width, int height, const std::string& name) {
     const char* dir = std::getenv("NOCTALIA_AUDIO_CAPTURE_DIR");
@@ -83,8 +112,11 @@ int main() {
   const auto context = eglCreateContext(display, config, EGL_NO_CONTEXT, version);
   TEST_CHECK(surface != EGL_NO_SURFACE && context != EGL_NO_CONTEXT);
   TEST_CHECK(eglMakeCurrent(display, surface, surface, context));
+  const auto otherSurface = eglCreatePbufferSurface(display, config, size);
+  TEST_CHECK(otherSurface != EGL_NO_SURFACE);
   {
     GlesTextureManager textures;
+    UploadRenderer uploadRenderer(textures);
     FancyAudioVisualizerNode node;
     FancyAudioVisualizerProgram program;
     program.ensureInitialized();
@@ -188,6 +220,16 @@ int main() {
         widget->create();
         auto* visual = findVisual(findVisual, widget->root());
         TEST_CHECK(visual != nullptr);
+        // A different window can remain current during this widget's CPU/texture tick.
+        // No draw-target bind or framebuffer drawing is needed to initialize its texture.
+        widget->setEditorPreview(true);
+        TEST_CHECK(eglMakeCurrent(display, otherSurface, otherSurface, context));
+        widget->onFrameTick(16.0F, uploadRenderer);
+        TEST_CHECK(visual->textureId() != 0);
+        TEST_CHECK(eglGetCurrentSurface(EGL_DRAW) == otherSurface);
+        TEST_CHECK(eglGetCurrentSurface(EGL_READ) == otherSurface);
+        TEST_CHECK(glGetError() == GL_NO_ERROR);
+        TEST_CHECK(eglMakeCurrent(display, surface, surface, context));
         visual->setAudioData(textures, spectrum, history);
         images[i] = paint(*visual, 300, 300);
         for (std::size_t previous = 0; previous < i; ++previous)
@@ -225,9 +267,8 @@ int main() {
     }
     TEST_CHECK(redRibbon && blueRibbon);
     const auto specs = desktop_settings::desktopWidgetSettingSpecs("fancy_audio_visualizer");
-    const auto modeSpec = std::find_if(specs.begin(), specs.end(), [](const auto& spec) {
-      return spec.schema.key == "visualization_mode";
-    });
+    const auto modeSpec =
+        std::ranges::find_if(specs, [](const auto& spec) { return spec.schema.key == "visualization_mode"; });
     TEST_CHECK(modeSpec != specs.end());
     for (const auto* name : names) {
       TEST_CHECK(std::ranges::any_of(modeSpec->options, [name](const auto& option) { return option.value == name; }));
@@ -237,5 +278,6 @@ int main() {
   TEST_CHECK(eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT));
   eglDestroyContext(display, context);
   eglDestroySurface(display, surface);
+  eglDestroySurface(display, otherSurface);
   eglTerminate(display);
 }

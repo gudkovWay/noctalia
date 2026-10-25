@@ -354,7 +354,8 @@ void DesktopWidgetsHost::createInstance(const DesktopWidgetState& state, const W
     if (!rawInstance->widget->needsFrameTick()) {
       return;
     }
-    m_renderContext->makeCurrent(rawInstance->surface->renderTarget());
+    // Ticks update scene state and shared textures, not this surface's framebuffer.
+    // textureManager() ensures the GL context without rebinding a different draw target.
     Renderer& renderer = rawInstance->surface->renderTarget().renderer();
     rawInstance->widget->onFrameTick(deltaMs, renderer);
   });
