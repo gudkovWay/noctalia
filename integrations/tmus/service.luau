@@ -37,6 +37,8 @@ local data = {
   results = {},
   tracks = {},
   tracksId = "",
+  tracksLoading = false,
+  tracksError = "",
   -- Хвост плейлиста: true/nil — догрузка возможна, false — демон
   -- отдал пустую страницу (дочитано). Начальное true: пока не
   -- доказано обратное, за потолком первой страницы могут быть треки.
@@ -114,6 +116,9 @@ local HOME_KEY = "tmus.home"
 local homeState = { status = "idle", shelves = {}, next = nil }
 local homeAt = 0
 local homeDirty = false
+local homeRequestGeneration = 0
+local homeSource = nil
+local sourceRequestGeneration = 0
 
 local function publishHome()
   noctalia.state.set(HOME_KEY, homeState)
@@ -517,7 +522,7 @@ local function pullLibrary()
   end)
 end
 
-local function pullTracks(id)
+local function pullTracks(id, force)
   -- Синхронный захват до инкремента поколения: playlists_changed
   -- маршрутизируется по запрошенному сейчас плейлисту, а не по
   -- последнему успешному снапшоту (data.tracksId).
@@ -525,7 +530,14 @@ local function pullTracks(id)
   tracksRequestGeneration = tracksRequestGeneration + 1
   local generation = tracksRequestGeneration
   tracksRefreshInFlight = true
-  call({ "library-tracks", id, "--json" }, function(got)
+  data.tracksLoading = true
+  data.tracksError = ""
+  publish()
+  local args = { "library-tracks", id, "--json" }
+  if force then
+    table.insert(args, "--refresh")
+  end
+  call(args, function(got)
     -- Ответ чужой, если пока летел запрос, ушёл более новый
     -- library-tracks (другой плейлист или повторное открытие того же).
     -- Guard не трогаем: его поставило и снимет текущее поколение.
@@ -533,6 +545,7 @@ local function pullTracks(id)
       return
     end
     tracksRefreshInFlight = false
+    data.tracksLoading = false
     local tracks = type(got) == "table" and got or {}
     data.tracks = tracks
     data.tracksId = id
@@ -545,6 +558,10 @@ local function pullTracks(id)
     -- если это по-прежнему актуальное поколение.
     if generation == tracksRequestGeneration then
       tracksRefreshInFlight = false
+      data.tracksLoading = false
+      if force then
+        data.tracksError = data.error or ""
+      end
     end
   end)
 end
@@ -600,14 +617,26 @@ local function fetchTracksMore(want, generation, emptyChain, finished)
   end)
 end
 
-local function pullHome()
+local function pullHome(force)
+  local source = data.source
+  if not force and homeState.status == "loading" and homeSource == source then
+    return
+  end
+  homeRequestGeneration = homeRequestGeneration + 1
+  local generation = homeRequestGeneration
+  homeSource = source
   homeAt = noctalia.nowMs()
-  -- Новая лента обнуляет продолжение: застрявший guard догрузки не
-  -- должен переживать перезагрузку (путь reset/error).
   homeMoreInFlight = false
   homeState = { status = "loading", shelves = homeState.shelves, next = nil }
   publishHome()
-  call({ "home", "--provider", data.source, "--json" }, function(got)
+  local args = { "home", "--provider", source, "--json" }
+  if force then
+    table.insert(args, "--refresh")
+  end
+  call(args, function(got)
+    if generation ~= homeRequestGeneration or source ~= data.source then
+      return
+    end
     -- Home возвращается ОБЪЕКТОМ { shelves, next }: shelves — полки
     -- страницы, next — курсор продолжения (nil/"" — дочитано).
     local page = type(got) == "table" and got or {}
@@ -616,6 +645,9 @@ local function pullHome()
     local next = type(page.next) == "string" and page.next ~= "" and page.next or nil
     homeState = { status = "ok", shelves = shelves, next = next, at = os.time() }
   end, function()
+    if generation ~= homeRequestGeneration or source ~= data.source then
+      return
+    end
     -- onDone дёргается и после успешного onOk: ошибкой считаем
     -- только случай, когда статус остался "loading".
     if homeState.status == "loading" then
@@ -642,7 +674,12 @@ local function pullHomeMore(cursor)
   end
   homeMoreInFlight = true
   local want = homeState.next
+  local generation = homeRequestGeneration
+  local source = data.source
   call({ "home-more", want, "--json" }, function(got)
+    if generation ~= homeRequestGeneration or source ~= data.source then
+      return
+    end
     homeMoreInFlight = false
     -- Пока летел запрос, ленту перезагрузили (pullHome): страница
     -- чужая — вписывать её в новую ленту нельзя.
@@ -656,6 +693,9 @@ local function pullHomeMore(cursor)
     homeState.next = type(page.next) == "string" and page.next ~= "" and page.next or nil
     homeState.at = os.time()
   end, function()
+    if generation ~= homeRequestGeneration or source ~= data.source then
+      return
+    end
     homeMoreInFlight = false
     publishHome()
   end)
@@ -677,11 +717,19 @@ local function pullRatings()
 end
 
 local function pullSource()
+  sourceRequestGeneration = sourceRequestGeneration + 1
+  local generation = sourceRequestGeneration
   call({ "source", "--json" }, function(got)
+    if generation ~= sourceRequestGeneration then
+      return
+    end
     local p = type(got) == "table" and got.provider or nil
     data.source = type(p) == "string" and p ~= "" and p or "all"
     sourceReady = true
     pullLibrary()
+    if homeSource ~= data.source then
+      pullHome()
+    end
   end)
 end
 
@@ -882,9 +930,9 @@ function onIpc(event, payload)
       poke({ "play-context", ids, "--start", tostring(math.max(0, tonumber(index) or 0)) })
     end
   elseif event == "rate" and payload then
-    -- Панель шлёт "like|dislike|none:<provider>:<id>"; argv CLI —
-    -- `tmus rate <provider>:<id> like|dislike|none`. Ответ не нужен:
-    -- демон разошлёт rating_changed, и запись обновится сама.
+    -- Панель шлёт "like|dislike|none:<provider>:<id>".
+    -- rating_changed обновляет отметку, playlists_changed — список лайков.
+    -- Ленту Home сохраняем до явного или планового обновления.
     local want, id = tostring(payload):match("^([%a]+):(.+)$")
     -- Защита в глубину: панель шлёт канонические like|dislike, но
     -- принимаем и snapshot-формы "liked"/"disliked" — молчаливый
@@ -1038,6 +1086,11 @@ function onIpc(event, payload)
     end)
   elseif event == "tracks" and payload then
     pullTracks(tostring(payload))
+  elseif event == "tracks-refresh" and payload then
+    local want = tostring(payload)
+    if LIKED_IDS[want] and want == tracksRequestedId and not tracksRefreshInFlight then
+      pullTracks(want, true)
+    end
   elseif event == "tracks-more" and payload then
     -- Ленивая догрузка хвоста: панель стучится, когда курсор подошёл
     -- к концу списка. Повторный запрос, пока летит предыдущий, и запрос
@@ -1056,12 +1109,17 @@ function onIpc(event, payload)
     end)
     -- publish() здесь не нужен: call() публикует сам в onDone (так же
     -- живёт ветка "tracks" выше).
+  elseif event == "home-refresh" then
+    pullHome(true)
   elseif event == "source" and payload then
     local want = tostring(payload)
     if want ~= data.source then
       poke({ "source", want })
       data.source = want
+      sourceRequestGeneration = sourceRequestGeneration + 1
+      sourceReady = true
       pullLibrary()
+      pullHome()
     end
   elseif event == "repeat" and payload then
     poke({ "loop", tostring(payload) })

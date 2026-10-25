@@ -1,6 +1,6 @@
 id = "q/tmus"
 name = "Музыка"
-version = "0.6.4"
+version = "0.6.5"
 # 32 = текущая версия хоста (kCurrentPluginApiVersion). Требуется не вообще
 # «32», а конкретные возможности, взятые по минимуму:
 #   22 — локальный require общего модуля ./desktop_skin.luau (kModuleRequire);
@@ -56,18 +56,36 @@ height = 760
 # ctrl+BackSpace = удалить слово в поиске. Home/End/Delete — курсор
 # поисковой строки (границы/удаление справа). «?» (question) — модал
 # подсказок; keysym один в обеих раскладках (ЙЦУКЕН — Shift+7).
+# ctrl+v (физическая V на ЙЦУКЕН — м) вставляет clipboard в insert поиска.
 # Имена по канону xkb: голые «</» хост отвергает весь плагин — только
 # канонические кейсимы.
+# Printable symbols need both bare and Shift chords: modifier matching is exact.
 capture_keys = [
   "Left", "Right", "Up", "Down", "Return", "Escape", "Space", "slash",
   "period", "comma", "minus", "apostrophe", "BackSpace", "less", "greater",
   "question", "Shift+question", "Home", "End", "Delete",
+  "exclam", "quotedbl", "numbersign", "dollar", "percent", "ampersand",
+  "parenleft", "parenright", "asterisk", "plus", "colon", "semicolon",
+  "equal", "at", "bracketleft", "backslash", "bracketright", "asciicircum",
+  "underscore", "grave", "braceleft", "bar", "braceright", "asciitilde", "numerosign",
+  "Shift+exclam", "Shift+quotedbl", "Shift+numbersign", "Shift+dollar",
+  "Shift+percent", "Shift+ampersand", "Shift+apostrophe", "Shift+parenleft",
+  "Shift+parenright", "Shift+asterisk", "Shift+plus", "Shift+comma", "Shift+minus",
+  "Shift+period", "Shift+slash", "Shift+colon", "Shift+semicolon", "Shift+less",
+  "Shift+equal", "Shift+greater", "Shift+at", "Shift+bracketleft", "Shift+backslash",
+  "Shift+bracketright", "Shift+asciicircum", "Shift+underscore", "Shift+grave",
+  "Shift+braceleft", "Shift+bar", "Shift+braceright", "Shift+asciitilde", "Shift+numerosign",
   "ctrl+j", "ctrl+k", "ctrl+Cyrillic_o", "ctrl+Cyrillic_el",
   "Tab", "ctrl+l", "ctrl+h", "ctrl+Cyrillic_de", "ctrl+Cyrillic_er",
   "ctrl+BackSpace",
+  "ctrl+v", "ctrl+Cyrillic_em", "ctrl+Cyrillic_EM",
   "XF86AudioNext", "XF86AudioPrev",
   "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
   "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+  "Shift+A", "Shift+B", "Shift+C", "Shift+D", "Shift+E", "Shift+F", "Shift+G",
+  "Shift+H", "Shift+I", "Shift+J", "Shift+K", "Shift+L", "Shift+M", "Shift+N",
+  "Shift+O", "Shift+P", "Shift+Q", "Shift+R", "Shift+S", "Shift+T", "Shift+U",
+  "Shift+V", "Shift+W", "Shift+X", "Shift+Y", "Shift+Z",
   "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
   "Cyrillic_a", "Cyrillic_be", "Cyrillic_ve", "Cyrillic_ghe", "Cyrillic_de",
   "Cyrillic_ie", "Cyrillic_io", "Cyrillic_zhe", "Cyrillic_ze", "Cyrillic_i",
@@ -84,6 +102,15 @@ capture_keys = [
   "Cyrillic_TSE", "Cyrillic_CHE", "Cyrillic_SHA", "Cyrillic_SHCHA",
   "Cyrillic_HARDSIGN", "Cyrillic_YERU", "Cyrillic_SOFTSIGN", "Cyrillic_E",
   "Cyrillic_YU", "Cyrillic_YA",
+  "Shift+Cyrillic_A", "Shift+Cyrillic_BE", "Shift+Cyrillic_VE", "Shift+Cyrillic_GHE",
+  "Shift+Cyrillic_DE", "Shift+Cyrillic_IE", "Shift+Cyrillic_IO", "Shift+Cyrillic_ZHE",
+  "Shift+Cyrillic_ZE", "Shift+Cyrillic_I", "Shift+Cyrillic_SHORTI", "Shift+Cyrillic_KA",
+  "Shift+Cyrillic_EL", "Shift+Cyrillic_EM", "Shift+Cyrillic_EN", "Shift+Cyrillic_O",
+  "Shift+Cyrillic_PE", "Shift+Cyrillic_ER", "Shift+Cyrillic_ES", "Shift+Cyrillic_TE",
+  "Shift+Cyrillic_U", "Shift+Cyrillic_EF", "Shift+Cyrillic_HA", "Shift+Cyrillic_TSE",
+  "Shift+Cyrillic_CHE", "Shift+Cyrillic_SHA", "Shift+Cyrillic_SHCHA",
+  "Shift+Cyrillic_HARDSIGN", "Shift+Cyrillic_YERU", "Shift+Cyrillic_SOFTSIGN",
+  "Shift+Cyrillic_E", "Shift+Cyrillic_YU", "Shift+Cyrillic_YA",
 ]
 
 [[service]]

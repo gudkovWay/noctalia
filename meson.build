@@ -1181,6 +1181,9 @@ if build_tests
   test('agent_workspace_gallery', python_gallery,
     args: [meson.current_source_dir() / 'tests/agent_workspace_gallery_test.py'],
   )
+  test('skin_runtime_install', python_gallery,
+    args: [meson.current_source_dir() / 'tests/skin_runtime_install_test.py'],
+  )
   wayland_server_dep = dependency('wayland-server')
 
   _wlr_screencopy_test_server_h = custom_target('wlr-screencopy-unstable-v1-test-server-header',
@@ -1315,6 +1318,7 @@ if build_tests
     'template_hook_runner',
     'theme_shell_mode',
     'time_format',
+    'tmus_integration',
     'toplevel_thumbnail_capture',
     'tray_identifier',
     'tray_fan',
@@ -1360,6 +1364,8 @@ if build_tests
       test_args = [meson.project_source_root() / 'integrations/skin-runtime']
     elif test_name == 'ai_cassette'
       test_args = [meson.project_source_root() / 'integrations/ai-triage']
+    elif test_name == 'tmus_integration'
+      test_args = [meson.project_source_root() / 'integrations/tmus']
     endif
     test(test_name, test_exe, args: test_args)
   endforeach

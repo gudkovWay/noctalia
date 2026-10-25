@@ -8,6 +8,8 @@ Standard library only. Copies:
   <repo>/integrations/tmus/desktop_skin.luau -> <plugin-root>/tmus/desktop_skin.luau
   <repo>/integrations/tmus/panel.luau        -> <plugin-root>/tmus/panel.luau
   <repo>/integrations/tmus/plugin.toml       -> <plugin-root>/tmus/plugin.toml
+  <repo>/integrations/tmus/service.luau,widget.luau,hint_navigation.luau
+      -> <plugin-root>/tmus/<same names>
   <repo>/integrations/tmus/skin-assets       -> <plugin-root>/tmus/skin-assets
   record            -> $XDG_DATA_HOME/wallpaper-studio/native-runtime.json
                        {"schema_version": 1, "binary": <prefix>/bin/noctalia}
@@ -66,6 +68,7 @@ TMUS_PANEL_SRC = ("integrations", "tmus", "panel.luau")
 TMUS_PANEL_DST = ("tmus", "panel.luau")
 TMUS_MANIFEST_SRC = ("integrations", "tmus", "plugin.toml")
 TMUS_MANIFEST_DST = ("tmus", "plugin.toml")
+TMUS_RUNTIME_FILES = ("service.luau", "widget.luau", "hint_navigation.luau")
 TMUS_SKIN_ASSETS_SRC = ("integrations", "tmus", "skin-assets")
 TMUS_SKIN_ASSETS_DST = ("tmus", "skin-assets")
 
@@ -338,6 +341,8 @@ def main(argv=None):
     check_source_file(tmus_src, errors)
     check_source_file(tmus_panel_src, errors)
     check_source_file(tmus_manifest_src, errors)
+    for name in TMUS_RUNTIME_FILES:
+        check_source_file(os.path.join(repo, "integrations", "tmus", name), errors)
     if not os.path.isdir(tmus_skin_assets_src):
         fail(errors, "tmus skin-assets directory not found: %s" % tmus_skin_assets_src)
 
@@ -358,6 +363,9 @@ def main(argv=None):
     plan_copy_file(tmus_src, tmus_dst, plan, errors)
     plan_copy_file(tmus_panel_src, tmus_panel_dst, plan, errors)
     plan_copy_file(tmus_manifest_src, tmus_manifest_dst, plan, errors)
+    for name in TMUS_RUNTIME_FILES:
+        plan_copy_file(os.path.join(repo, "integrations", "tmus", name),
+                       os.path.join(plugin_root, "tmus", name), plan, errors)
     plan_copy_tree(tmus_skin_assets_src, tmus_skin_assets_dst, plan, errors)
 
     ai_plugin_dst = None
