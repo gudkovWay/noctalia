@@ -315,6 +315,8 @@ wayland_protos_dir = wayland_protos_dep.get_variable('pkgdatadir')
 # the generated .c is compiled (it does #include "foo-client-protocol.h").
 _protocol_sources = []
 _protocol_headers = []
+_identity_protocol_sources = []
+_identity_protocol_headers = []
 
 # Helper macro via foreach; each entry: [name, xml_input]
 # xml_input can be a string (path) or a custom_target.
@@ -395,7 +397,17 @@ foreach _p : [
   )
   _protocol_sources += _c
   _protocol_headers += _h
+  if _name in ['ext-foreign-toplevel-list-v1', 'hyprland-toplevel-mapping-v1', 'wlr-foreign-toplevel-management-unstable-v1']
+    _identity_protocol_sources += _c
+    _identity_protocol_headers += _h
+  endif
 endforeach
+
+executable('agent-workspace-toplevels',
+  sources: files('src/capture/toplevel_identity_cli.cpp') + _identity_protocol_sources + _identity_protocol_headers,
+  dependencies: [wayland_client_dep, nlohmann_dep],
+  install: false,
+)
 
 # wlr-layer-shell: 'namespace' is a C++ keyword; rename it in the generated
 # header only (private-code is compiled as C so it's fine as-is).
@@ -1165,6 +1177,10 @@ install_data(
 )
 
 if build_tests
+  python_gallery = find_program('python3')
+  test('agent_workspace_gallery', python_gallery,
+    args: [meson.current_source_dir() / 'tests/agent_workspace_gallery_test.py'],
+  )
   wayland_server_dep = dependency('wayland-server')
 
   _wlr_screencopy_test_server_h = custom_target('wlr-screencopy-unstable-v1-test-server-header',
