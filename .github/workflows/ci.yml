@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, 'DEV-capitalism-slave-*']
   pull_request:
+  workflow_dispatch:
 
 # Cancel in-progress runs for the same branch/PR when new commits land.
 concurrency:
