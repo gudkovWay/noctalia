@@ -1269,6 +1269,7 @@ if build_tests
     'multiwm_compositor',
     'jxl_decoder',
     'kde_color_scheme',
+    'key_chord',
     'keyboard_layout_label',
     'lane_selection_token',
     'location_service',
