@@ -48,10 +48,18 @@ state = {new=1, unsure=2, usage={at=1, error='offline', providers={
   {id='anthropic',title='Claude A',plan='Pro',error='',rows={{label='5h',fraction=0,text='0%',resetsAt=0}}},
   {id='vast',title='Vast.ai',error='no key',rows={}}
 }}}
+state.memory={at=1,worker={status='waiting'},counts={pending=0,running=0,applied=0,indexed=8,no_change=0,
+ needs_owner=0,failed=0,blocked=0,policy_blocked=0,needs_evidence=0}}
 requests = {}; terminal = ''; closed = false; failMemory = false
 triageRows = {{path='/fixture/card',title='Evidence',fresh=true,unread=true,verdict='?',share='warning',share_why='private',why='new'}}
-memoryRows = {{id='s1',kind='session',path='/fixture/session',title='Session',preview='pending session'},
- {id='n1',kind='note',title='Note',preview='pending note',reviewer='owner',review_confidence=0.7}}
+local function job(id,status,title,covered)
+ return {id=id,state=status,title=title,source='session:fixture',revision='r1',applied_count=1,
+  question_count=status=='needs_owner' and 1 or 0,reason='Fixture evidence',covered_by=covered}
+end
+memoryViews={done={},queue={},questions={job('q1','needs_owner','Owner question'),
+ job('q2','needs_owner','Covered question','done-1')},blocked={job('b1','failed','Technical failure')},
+ evidence={},history={}}
+for i=1,8 do table.insert(memoryViews.done,job('done-'..i,'indexed','Delivered '..i)) end
 noctalia = setmetatable({
  nowMs=function() return 1000 end,
  readFile=function() return '---\ntitle: Evidence\n---\nActual evidence' end,
@@ -64,9 +72,19 @@ noctalia = setmetatable({
   local out=''
   if string.find(text,'triage.py rows',1,true) then out=noctalia.json.encode(triageRows)
   elseif string.find(text,'runs.py',1,true) then out=noctalia.json.encode({{['путь']='/fixture/log',['начало']='2026-10-12',['исход']='оборвалась',['хвост']='interrupted'}})
-  elseif string.find(text,'memory_write.py rows',1,true) then out=noctalia.json.encode(memoryRows)
+  elseif string.find(text,'memory_cli.py delivery-job',1,true) then out='Fixture delivery receipt'
+  elseif string.find(text,'memory_cli.py delivery',1,true) then
+   local view,offset,limit='done',0,6
+   for i=1,#cmd-1 do
+    if cmd[i]=='--view' then view=cmd[i+1]
+    elseif cmd[i]=='--offset' then offset=tonumber(cmd[i+1])
+    elseif cmd[i]=='--limit' then limit=tonumber(cmd[i+1]) end
+   end
+   local rows={};local all=memoryViews[view]
+   for i=offset+1,math.min(#all,offset+limit) do table.insert(rows,all[i]) end
+   out=noctalia.json.encode({version=2,rows=rows,total=#all,at=1})
   elseif string.find(text,'tail -n',1,true) then out='Actual log\n⚠ warning' end
-  cb({exitCode=(failMemory and string.find(text,'memory_write.py promote',1,true)) and 1 or 0,stdout=out,stderr='write denied'})
+  cb({exitCode=(failMemory and string.find(text,'memory_cli.py delivery',1,true)) and 1 or 0,stdout=out,stderr='read denied'})
  end,
 }, {__index=noctalia})
 panel = setmetatable({close=function() closed=true end},{__index=panel})
@@ -117,10 +135,13 @@ end
   check(host.exec("=triage", "onKey('2',true)"), "triage switch failed");
   check(find("entry-1") && find("evidence"), "triage list/evidence split missing");
   check(host.exec("=clear-requests", "requests={}"), "request reset failed");
-  click("escalate");
-  check(host.exec("=confirm-first", "assert(not sent(' all escalate'))"), "first paid click spent money");
-  click("escalate");
-  check(host.exec("=confirm-second", "assert(sent(' all escalate'))"), "second paid click did not execute");
+  check(
+      !find("run") && !find("escalate") && find("archive-explanation"), "archive revived obsolete paid triage actions"
+  );
+  check(
+      host.exec("=archive-read-only", "assert(not sent(' all run') and not sent(' all escalate'))"),
+      "opening archive launched a paid triage pass"
+  );
   check(host.exec("=preview", "onKey('Return',true)"), "evidence opening failed");
   check(find("share-approved") && find("share-never"), "sharing permission controls missing");
   check(host.exec("=sharing-before", "assert(not sent(' allow '))"), "opening private evidence approved sharing");
@@ -128,7 +149,7 @@ end
   check(
       host.exec(
           "=sharing-denied",
-          "assert(sent(\"allow '/fixture/card' never\")); assert(not sent(\"allow '/fixture/card' approved\"))"
+          R"(assert(sent("allow '/fixture/card' never")); assert(not sent("allow '/fixture/card' approved")))"
       ),
       "explicit sharing denial became approval"
   );
@@ -149,17 +170,57 @@ end
   );
   check(
       host.exec(
-          "=memory-session",
-          "onKey('5',true); requests={}; onKey('y',true); assert(terminal==\"nvim '/fixture/session'\", "
-          "'terminal='..tostring(terminal)); assert(not sent(' promote '))"
+          "=memory-results",
+          "onKey('5',true); requests={}; onKey('y',true); onKey('n',true); "
+          "assert(not sent('memory_write.py') and not sent('memory-review'))"
       ),
-      "session candidate was promoted instead of edited"
+      "memory delivery results revived legacy promote/reject actions"
   );
   check(
-      host.exec("=memory-failure", "failMemory=true; onKey('j',true); onKey('y',true)"),
-      "memory failure scenario failed"
+      find("memory-title") && std::get<std::string>(find("memory-title")->props.at("text")) == "Delivered 1",
+      "memory v2 results did not render"
   );
-  check(find("memory-error") && find("entry-2"), "failed memory write hid its error or candidate");
+  check(
+      host.exec("=memory-receipt", "onKey('Return',true); assert(sent('delivery-job done-1'))"),
+      "memory receipt did not request the exact delivery job"
+  );
+  check(
+      host.exec("=memory-next-page", "onKey('Page_Down',true); assert(sent('--offset 6'))"),
+      "memory pagination did not request the next bounded page"
+  );
+  check(
+      find("memory-title") && std::get<std::string>(find("memory-title")->props.at("text")) == "Delivered 7",
+      "memory next page retained an old selection"
+  );
+  check(
+      host.exec(
+          "=memory-questions",
+          "onKey('Page_Up',true); onKey('f',true); onKey('f',true); "
+          "onKey('j',true); terminal=''; onKey('d',true); assert(terminal=='')"
+      ),
+      "covered historical question opened a new owner discussion"
+  );
+  check(
+      host.exec(
+          "=memory-unavailable",
+          "onKey('k',true); failMemory=true; onKey('r',true); "
+          "terminal=''; onKey('d',true); assert(terminal=='')"
+      ),
+      "stale memory data allowed a new discussion after provider failure"
+  );
+  check(
+      find("memory-load-error") && find("entry-1") && find("memory-title"),
+      "memory failure hid the last successful snapshot or its error"
+  );
+  check(
+      host.exec(
+          "=memory-discuss",
+          "failMemory=false; onKey('r',true); onKey('d',true); "
+          "assert(string.find(terminal,'omp --cwd',1,true)); assert(string.find(terminal,'q1',1,true)); "
+          "assert(not sent('memory_review.py') and not sent('memory_write.py'))"
+      ),
+      "current unresolved question did not open a bounded OMP discussion"
+  );
   check(
       host.exec(
           "=interlock",
@@ -178,10 +239,9 @@ end
       host.exec("=keyboard-lists", "onKey('5',true); onKey('g',true); onKey('Cyrillic_O',true)"),
       "RU layout/list end navigation failed"
   );
-  check(find("memory-error"), "memory action failure disappeared without a successful resolution");
   check(
-      find("memory-title") && std::get<std::string>(find("memory-title")->props.at("text")) == "Note",
-      "RU down key did not restore the selected note after jumping to the first entry"
+      find("memory-title") && std::get<std::string>(find("memory-title")->props.at("text")) == "Covered question",
+      "RU down key did not preserve memory job identity"
   );
   check(
       host.exec("=unattached", "onPanelGeometry(720,580,-1,''); onKey('1',true)"), "narrow unattached fallback failed"
@@ -197,6 +257,22 @@ end
   check(
       find("neural-state") && std::get<std::string>(find("neural-state")->props.at("fill")) == "secondary",
       "intentional model-off became an alarm in the closed widget"
+  );
+  check(
+      host.exec("=widget-memory-failure", "state.memory.counts.failed=1; watch(state)"),
+      "memory provider failure transition failed"
+  );
+  check(
+      find("neural-state") && std::get<std::string>(find("neural-state")->props.at("fill")) == "error",
+      "memory delivery failure was hidden by an intentionally disabled model"
+  );
+  check(
+      host.exec("=widget-memory-recovered", "state.memory.counts.failed=0; watch(state)"),
+      "memory recovery transition failed"
+  );
+  check(
+      find("neural-state") && std::get<std::string>(find("neural-state")->props.at("fill")) == "secondary",
+      "resolved memory failure retained a stale error indicator"
   );
   check(
       host.exec("=widget-failure", "state.bot['модель']['состояние']='спит'; watch(state)"),
@@ -225,6 +301,63 @@ family='kumihimo'
           && find("neural-state")
           && std::get<std::string>(find("neural-state")->props.at("fill")) == "error",
       "skin reactivation did not restore the neural mark and current failure state"
+  );
+  scripting::PluginBindingContext serviceContext;
+  scripting::ScriptSettings serviceSettings;
+  LuauHost serviceHost(api, "q/ai-triage:watch");
+  serviceContext.ownerId = serviceHost.runtimeName();
+  serviceContext.host = &serviceHost;
+  serviceContext.settings = &serviceSettings;
+  serviceHost.setPluginDir(directory);
+  serviceHost.setScriptContext(&serviceContext);
+  scripting::registerPluginBindings(serviceHost.state(), &serviceContext);
+  lua_setsafeenv(serviceHost.state(), LUA_GLOBALSINDEX, false);
+  const auto serviceCheck = [&](bool condition, const char* why) {
+    if (!condition) {
+      ++failures;
+      std::println(stderr, "ai_cassette service: {} ({})", why, serviceHost.lastError());
+    }
+  };
+  serviceCheck(
+      serviceHost.exec("=service-fixtures", R"(
+memoryCalls=0
+published=nil
+pendingMemory=nil
+noctalia=setmetatable({
+ nowMs=function() return 1000 end,
+ setUpdateInterval=function() end,
+ state={set=function(_,value) published=noctalia.json.decode(noctalia.json.encode(value)) end},
+ runAsync=function(cmd,cb)
+  local text=type(cmd)=='table' and table.concat(cmd,' ') or cmd
+  assert(not string.find(text,'memory_write.py',1,true))
+  assert(not string.find(text,'memory_review.py',1,true))
+  if string.find(text,'memory_cli.py delivery',1,true) then
+   memoryCalls+=1;pendingMemory=cb
+  elseif cb then cb({exitCode=0,stdout='{}',stderr=''}) end
+ end,
+},{__index=noctalia})
+)"),
+      "service fixture setup failed"
+  );
+  std::ifstream serviceFile(directory / "service.luau");
+  const std::string serviceSource{std::istreambuf_iterator<char>(serviceFile), std::istreambuf_iterator<char>()};
+  serviceCheck(serviceHost.exec((directory / "service.luau").string(), serviceSource), "service failed to load");
+  serviceCheck(
+      serviceHost.exec("=memory-service-single-flight", R"(
+assert(memoryCalls==1)
+onIpc('memory-refresh');onIpc('memory-refresh')
+assert(memoryCalls==1)
+pendingMemory({exitCode=0,stdout=noctalia.json.encode({version=2,at=5,counts={indexed=7}})})
+assert(published.memory.counts.indexed==7 and not published.memory.busy)
+onIpc('memory-refresh')
+assert(memoryCalls==2)
+pendingMemory({exitCode=1,stderr='offline'})
+assert(published.memory.counts.indexed==7 and published.memory.error~='' and not published.memory.busy)
+onIpc('memory-refresh')
+pendingMemory({exitCode=0,stdout=noctalia.json.encode({version=1,counts={indexed=100}})})
+assert(published.memory.counts.indexed==7 and published.memory.error~='')
+)"),
+      "memory service lost single-flight, version validation or last-good data on failure"
   );
   return failures == 0 ? 0 : 1;
 }

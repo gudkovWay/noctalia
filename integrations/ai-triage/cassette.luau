@@ -12,11 +12,11 @@ C.glass = '#24343B80'
 C.rule = '#9BADB12B'
 C.paper = '#CEC2A8'
 C.ink = '#302D28'
-C.names = {'Лимиты','Разбор','Бот','Логи','Память'}
+C.names = {'Лимиты','Архив','Бот','Логи','Память'}
 function C.label(key, text, props)
   props = props and table.clone(props) or {}
   props.key, props.text = key, tostring(text or '')
-  props.fontFamily = props.fontFamily or 'Noto Sans'
+  props.fontFamily = props.fontFamily or 'ComicShannsMono Nerd Font'
   props.fontSize = props.fontSize or 13
   props.color = props.color or C.text
   return ui.label(props)
@@ -52,7 +52,7 @@ function C.log(key, lines, height)
   local nodes = {}
   for i, line in ipairs(lines) do
     local warning = string.sub(line,1,#'⚠') == '⚠' or string.sub(line,1,#'−') == '−'
-    table.insert(nodes,C.label(key..'-line-'..i,line,{fontSize=12,fontFamily='Agave Nerd Font',
+    table.insert(nodes,C.label(key..'-line-'..i,line,{fontSize=12,fontFamily='ComicShannsMono Nerd Font',
       maxLines=1,color=warning and C.bad or '#BCCBD0'}))
   end
   if #nodes == 0 then table.insert(nodes,C.label(key..'-empty','Лога пока нет',{color=C.muted})) end
@@ -62,7 +62,7 @@ end
 function C.empty(key,text)
   return C.well(key,{C.label(key..'-text',text,{color=C.muted})},{flexGrow=1,justify='center'})
 end
-function C.frame(geometry, header, tabs, content, freshness, help)
+function C.frame(geometry, header, tabs, content, freshness, help, paged)
   local w,h = geometry.width,geometry.height
   local mounted = skin.kumihimo() and geometry.edge == 'top' and geometry.anchor >= 0
   local neck = mounted and 32 or 0
@@ -72,9 +72,13 @@ function C.frame(geometry, header, tabs, content, freshness, help)
     table.insert(children,ui.image({key='cassette-body',path=C.asset..'body.png',y=neck,width=w,height=bodyH,fit='stretch'}))
   end
   table.insert(children,ui.column({key='cassette-content',x=32,y=neck+29,width=math.max(1,w-64),
-    height=math.max(1,bodyH-49),gap=8,fill='#00000000'}, {
+    height=80,gap=8,fill='#00000000'}, {
     header,C.ruleNode('header-rule'),tabs,C.ruleNode('tab-rule'),
-    ui.scroll({key='content-scroll',flexGrow=1,gap=0,padding=0},{content}),
+  }))
+  table.insert(children,ui.column({key='content-viewport',x=32,y=neck+129,
+    width=math.max(1,w-64),height=math.max(1,bodyH-249),gap=0},{paged and content or ui.scroll({key='content-scroll',flexGrow=1,gap=0,padding=0},{content})}))
+  table.insert(children,ui.column({key='cassette-footer',x=32,y=neck+bodyH-105,
+    width=math.max(1,w-64),height=80,gap=8,fill='#00000000'}, {
     C.ruleNode('footer-rule'),
     C.label('freshness',freshness,{fontSize=11,color=C.muted,maxLines=1}),
     C.label('action-help',help,{fontSize=11,color=C.muted,maxLines=1}),

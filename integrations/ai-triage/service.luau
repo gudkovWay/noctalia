@@ -1,11 +1,10 @@
 --!nonstrict
 -- Служба: единственный, кто считает состояние. Считает хозяйства бота,
--- разбора сессий Клода и AI-memory, потому что виджет в баре один.
+-- архива сессий и AI-memory, потому что виджет в баре один.
 --
 -- Почему служба, а не сам виджет: экземпляр виджета живёт на каждом баре, то
 -- есть на каждом мониторе, и опрос из него шёл бы втрое чаще без всякой
--- пользы. Плюс обход разбора идёт минутами — он не должен обрываться от того,
--- что панель закрыли.
+-- пользы. Worker памяти работает отдельно от панели и этой службы.
 --
 -- Виджет и панель только читают `noctalia.state`; менять его отсюда — правило,
 -- а не совпадение: два писателя в одно состояние разошлись бы при первой же
@@ -15,7 +14,7 @@
 -- отвечают сами. Копия такой логики на Lua разъедется с оригиналом молча.
 --
 -- Команды приходят по IPC:
---   noctalia msg plugin q/ai-triage:watch all run|escalate|index
+--   noctalia msg plugin q/ai-triage:watch all memory-refresh
 --   noctalia msg plugin q/ai-triage:watch all bot-start|bot-stop|bot-restart
 --   noctalia msg plugin q/ai-triage:watch all model-on|model-off|model-toggle
 --   noctalia msg plugin q/ai-triage:watch all refresh|usage|usage-invalidate|clear
@@ -49,8 +48,6 @@ end
 local USAGE_MS = 300000       -- omp кэширует лимиты, поэтому пяти минут достаточно
 local BALANCE_MS = 900000     -- баланс меняется медленнее лимитов, частый запрос избыточен
 local VAST_MS = 300000        -- у Vast баланс тает на ходу, пяти минут хватает
-local MAX_LINES = 200       -- строк лога держим ровно столько, сколько влезет
-                            -- в панель прокруткой; остальное — в терминал
 
 -- `systemctl stop` ждёт, пока демон уйдёт, а у него TimeoutStopSec=45: он
 -- дописывает хвост сессии, гасит llama-server и контейнер морды. Таймаут
@@ -67,8 +64,7 @@ local MODEL_MS = 180000
 local data = {
   new = 0, unsure = 0, warn = 0, yes = 0, no = 0, unread = 0, total = 0,
   running = false, lines = {}, tail = "", at = 0,
-  memory_pending = 0, memory_disputed = 0, memory_promoted = 0,
-  memory_rejected = 0, memory_total = 0, memory_review_running = false,
+  memory = { at = 0, error = "", busy = false },
   bot = nil,
   acting = "",
   actingModel = "",
@@ -85,19 +81,11 @@ local usageReports = {}
 local deepseekBalance = { error = "ключ не отдался", text = "", currency = "" }
 local vastBalance = { error = "", text = "" }
 
--- Сводку показываем один раз на прогон, а не на каждый опрос.
-local announce = false
-
 local function publish()
   data.at = os.time()
   noctalia.state.set(KEY, data)
 end
 
--- В выводе triage.py есть цвета терминала: «⚠» приезжает обёрнутым в \27[31m.
--- В панели своя разметка, escape-последовательности там — мусор.
-local function plain(line)
-  return (string.gsub(line, "\27%[[0-9;]*m", ""))
-end
 
 -- Уведомляем через notify-send, а не через noctalia.notify. Разница не в
 -- красоте: свои уведомления Noctalia помечает origin=internal и в
@@ -114,10 +102,6 @@ local function notify(urgency, timeoutMs, title, body)
     urgency, timeoutMs, quoted(title), quoted(body)))
 end
 
-local function summary()
-  return string.format("в индексе %d · отсеяно %d · спорных %d · небезопасных %d",
-    data.yes, data.no, data.unsure, data.warn)
-end
 
 -- ────────────────────────────────────────────────────────── опрос
 
@@ -272,47 +256,24 @@ local function pollTriage()
     if type(got) ~= "table" then return end
     for _, k in ipairs({ "new", "unsure", "warn", "yes", "no", "unread", "total" }) do data[k] = tonumber(got[k]) or 0 end
     data.running = got.running == true
-    if announce and not data.running then announce = false; notify("normal", 8000, "Разбор закончен", summary()) end
     publish()
   end, 20000)
 end
 
 local function pollMemory()
-  noctalia.runAsync({ "python3", AI .. "/bin/memory_write.py", "state" }, function(res)
-    if not res or res.exitCode ~= 0 then return end
-    local got = noctalia.json.decode(res.stdout or "")
-    if type(got) ~= "table" then return end
-    data.memory_pending = tonumber(got.pending) or 0
-    data.memory_disputed = tonumber(got.disputed) or 0
-    data.memory_promoted = tonumber(got.promoted) or 0
-    data.memory_rejected = tonumber(got.rejected) or 0
-    data.memory_total = tonumber(got.total) or 0
-    data.memory_review_running = got.review_running == true
+  if data.memory.busy then return end
+  data.memory.busy = true
+  noctalia.runAsync({ "python3", AI .. "/bin/memory_cli.py", "delivery", "--limit", "1" }, function(res)
+    local got = res and res.exitCode == 0 and noctalia.json.decode(res.stdout or "")
+    if type(got) == "table" and got.version == 2 and type(got.counts) == "table" then
+      data.memory = got
+      data.memory.error = ""
+    else
+      data.memory.error = "Память v2 недоступна; сохранён последний снимок"
+    end
+    data.memory.busy = false
     publish()
-  end, 20000)
-end
-
-local function startMemoryReview()
-  if data.memory_review_running then return end
-  data.memory_review_running = true
-  publish()
-  local ok = noctalia.runStream("python3 " .. AI .. "/bin/memory_review.py run", function(raw)
-    local line = noctalia.string.trim(plain(raw))
-    if line ~= "" then data.tail = line; publish() end
-  end)
-  if not ok then
-    data.memory_review_running = false
-    notify("critical", 0, "Память: обзор не запустился", "memory_review.py run")
-  end
-  pollMemory()
-end
-
-local function memoryEvent(event)
-  if event == "memory-review" then
-    startMemoryReview()
-  elseif event == "memory-refresh" then
-    pollMemory()
-  end
+  end, 10000)
 end
 
 
@@ -388,64 +349,12 @@ local function model(verb, label)
 end
 
 
--- ──────────────────────────────────────────────────────────── обход разбора
-
--- Поток строк: у runStream нет onClose, поэтому конец потока распознаётся по
--- последней строке самого скрипта. pass.sh обязан её напечатать в любом
--- исходе — и в нормальном, и через trap.
-local function terminal(line)
-  return string.match(line, "^готово")
-      or string.match(line, "^прервано")
-      or string.match(line, "^занято")
-end
-
-local function start(cmd, label)
-  if data.running then
-    return
-  end
-  data.running = true
-  data.lines = { label }
-  data.tail = label
-  publish()
-
-  local ok = noctalia.runStream(cmd, function(raw)
-    local line = noctalia.string.trim(plain(raw))
-    if line == "" then
-      return
-    end
-    table.insert(data.lines, line)
-    if #data.lines > MAX_LINES then
-      table.remove(data.lines, 1)
-    end
-    data.tail = line
-    if terminal(line) then
-      data.running = false
-      announce = not string.match(line, "^занято")
-      pollTriage()                -- счётчики берём с диска, а не из строки
-    end
-    publish()
-  end)
-
-  if not ok then
-    data.running = false
-    data.tail = "не удалось запустить: " .. cmd
-    notify("critical", 0, "Разбор не запустился", cmd)
-    publish()
-  end
-end
-
 function update()
   poll()
 end
 
 function onIpc(event, payload)
-  if event == "run" then
-    start(AI .. "/bin/pass.sh", "запускаю разбор…")
-  elseif event == "escalate" then
-    start(AI .. "/bin/pass.sh escalate", "спорные — Claude…")
-  elseif event == "index" then
-    start(AI .. "/bin/pass.sh index", "пересобираю индекс…")
-  elseif event == "bot-start" then
+  if event == "bot-start" then
     service("start", "пуск")
   elseif event == "bot-stop" then
     service("stop", "остановка")
@@ -469,8 +378,8 @@ function onIpc(event, payload)
   elseif event == "refresh" then
     vastAt = noctalia.nowMs(); pollVastBalance()
     poll()
-  elseif event == "memory-review" or event == "memory-refresh" then
-    memoryEvent(event)
+  elseif event == "memory-refresh" then
+    pollMemory()
   elseif event == "clear" then
     data.lines = {}
     data.tail = ""
