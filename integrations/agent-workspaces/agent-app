@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Launch an attributed GUI child without leaving the caller's resource scope."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--session', help='current OMP session ID; for sessions predating the identity hook')
+    parser.add_argument('--agent', default='Main', help='OMP agent registry ID (default: Main)')
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = args.command
+    if command[:1] == ['--']:
+        command = command[1:]
+    if not command:
+        parser.error('provide a command after --')
+    key = os.environ.get('OMP_GUI_KEY', '')
+    if args.session is not None:
+        if not args.session or not args.agent or '\0' in args.session or '\0' in args.agent:
+            parser.error('session and agent must be nonempty identities')
+        key = hashlib.sha256((args.session + '\0' + args.agent).encode()).hexdigest()[:24]
+    if not re.fullmatch(r'[0-9a-f]{24}', key):
+        parser.error('missing/invalid OMP_GUI_KEY; use --session <current-session-id> [--agent <registry-id>]')
+    workspace = 'special:omp-' + key
+    if args.dry_run:
+        print(json.dumps({'key': key, 'workspace': workspace, 'command': command,
+                          'scope': 'inherited; launch requires guarded-run',
+                          'isolation': 'caller must supply independent config/profile/IPC'}, ensure_ascii=False))
+        return 0
+    cgroup = Path('/proc/self/cgroup').read_text()
+    if not re.search(r'/omp-heavy-job-[0-9a-f]{32}\.scope(?:/|$)', cgroup, re.MULTILINE):
+        parser.error('GUI launch requires the existing guarded-run scope')
+    signature = os.environ.get('HYPRLAND_INSTANCE_SIGNATURE', '')
+    if not signature:
+        parser.error('missing target HYPRLAND_INSTANCE_SIGNATURE')
+    ready = subprocess.run(['hyprctl', '-i', signature, 'eval',
+                            'assert(_G.omp_agent_workspace_version == 1, "agent workspace routing not loaded")'],
+                           capture_output=True, text=True, timeout=3)
+    if ready.returncode or ready.stdout.strip() != 'ok':
+        parser.error('personal routing is not loaded in the selected compositor; refusing a possibly visible launch')
+    child_env = dict(os.environ, AGENT='1', OMP_GUI_KEY=key)
+    print('agent-app: ' + workspace, file=sys.stderr)
+    os.execvpe(command[0], command, child_env)
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (OSError, subprocess.SubprocessError) as error:
+        sys.exit('agent-app: ' + str(error))
