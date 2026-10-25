@@ -77,9 +77,9 @@ local function draw()
       image("metadata-wood", ASSET .. "board.png", 0, 0, 256, 40),
     }),
     ui.label({key = "track-title", x = 12, y = 9, text = title, fontSize = 13,
-      fontFamily = "Noto Sans", fontWeight = "normal", color = "#EBE9E1", maxWidth = 198, maxLines = 1}),
+      fontFamily = "ComicShannsMono Nerd Font", fontWeight = "normal", color = "#EBE9E1", maxWidth = 198, maxLines = 1}),
     ui.label({key = "track-artist", x = 12, y = 27, text = artist, fontSize = 11,
-      fontFamily = "Noto Sans", fontWeight = "normal", color = "#ADBBC0", maxWidth = 198, maxLines = 1}),
+      fontFamily = "ComicShannsMono Nerd Font", fontWeight = "normal", color = "#ADBBC0", maxWidth = 198, maxLines = 1}),
   }))
   barWidget.render(ui.box({key = "joinery-bar", width = width, height = height,
     fill = "#00000000", visible = true, clip = true}, nodes))

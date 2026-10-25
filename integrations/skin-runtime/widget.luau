@@ -158,7 +158,7 @@ local function kumihimoDraw()
       }),
       ui.label({
         key = "metric-" .. tostring(i), text = value,
-        fontSize = 14, fontFamily = "Noto Sans", fontWeight = "bold",
+        fontSize = 14, fontFamily = "ComicShannsMono Nerd Font", fontWeight = "bold",
         maxLines = 1, color = "#FFF1D6",
       }),
     }))

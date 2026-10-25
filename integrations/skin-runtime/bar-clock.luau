@@ -20,8 +20,8 @@ function update()
   if signature==nextSignature then return end
   signature=nextSignature
   barWidget.render(ui.column({key='bar-clock',width=92,height=56,gap=2,paddingV=10,align='center'}, {
-    ui.label({key='bar-clock-date',text=date,fontSize=11,fontFamily='Noto Sans',color='#B5A38F',maxLines=1}),
-    ui.label({key='bar-clock-time',text=time,fontSize=14,fontFamily='Noto Sans',color='#E7D7BC',maxLines=1}),
+    ui.label({key='bar-clock-date',text=date,fontSize=11,fontFamily='ComicShannsMono Nerd Font',color='#B5A38F',maxLines=1}),
+    ui.label({key='bar-clock-time',text=time,fontSize=14,fontFamily='ComicShannsMono Nerd Font',color='#E7D7BC',maxLines=1}),
   }))
   barWidget.setTooltip({{key='Дата',value=noctalia.formatTime(pattern(noctalia.dateFormat(), '%A, %x'))}})
 end
