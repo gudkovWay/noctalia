@@ -525,6 +525,16 @@ LayoutSize Flex::runLayout(Renderer& renderer, const LayoutConstraints& constrai
     targetHeight = height();
   }
 
+  // Declarative width/height arrive as equal min/max bounds, including in absolute Box children.
+  if (!widthKnown && m_maxWidth > 0.0F && m_minWidth == m_maxWidth) {
+    widthKnown = true;
+    targetWidth = m_maxWidth;
+  }
+  if (!heightKnown && m_maxHeight > 0.0F && m_minHeight == m_maxHeight) {
+    heightKnown = true;
+    targetHeight = m_maxHeight;
+  }
+
   if (widthKnown) {
     targetWidth = constrainFlexWidth(targetWidth);
   }

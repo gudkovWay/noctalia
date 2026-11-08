@@ -61,7 +61,9 @@ AppIconColorizationStyle resolveAppIconColorization(const ColorSpec& tint) noexc
   return AppIconColorizationStyle{.tint = resolveColorSpec(tint), .monochrome = false};
 }
 
-void bakeAppIconForColorization(std::uint8_t* rgba, int width, int height, const Color& tint) noexcept {
+void bakeAppIconForColorization(
+    std::uint8_t* rgba, int width, int height, const Color& tint, bool preserveInk
+) noexcept {
   if (rgba == nullptr || width <= 0 || height <= 0) {
     return;
   }
@@ -100,7 +102,8 @@ void bakeAppIconForColorization(std::uint8_t* rgba, int width, int height, const
   }
 
   const float meanInk = inkWeight > 0.0F ? inkSum / inkWeight : 0.5F;
-  const bool invertInk = (tintLum < 0.45F && meanInk > 0.55F) || (tintLum > 0.55F && meanInk < 0.45F);
+  const bool invertInk = !preserveInk
+      && ((tintLum < 0.45F && meanInk > 0.55F) || (tintLum > 0.55F && meanInk < 0.45F));
 
   const float rawSpan = maxLum - minLum;
   const bool stretch = rawSpan >= tuning.minContrastSpan;

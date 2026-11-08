@@ -3,6 +3,7 @@
 #include "render/core/render_styles.h"
 #include "ui/style.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string_view>
 
@@ -28,6 +29,40 @@ struct AttachedPanelGeometry {
 };
 
 namespace attached_panel {
+
+  struct LayerMargins {
+    std::int32_t top = 0;
+    std::int32_t right = 0;
+    std::int32_t bottom = 0;
+    std::int32_t left = 0;
+  };
+
+  [[nodiscard]] inline LayerMargins layerMargins(
+      std::string_view edge, std::int32_t x, std::int32_t y,
+      std::int32_t width, std::int32_t height, std::int32_t outputWidth, std::int32_t outputHeight,
+      std::int32_t barReserved, std::int32_t crossReserved) {
+    LayerMargins result{.top = y, .left = x};
+    if (edge == "left" || edge == "right") {
+      result.top -= crossReserved;
+      if (edge == "left") result.left -= barReserved;
+      else {
+        result.left = 0;
+        result.right = outputWidth - width - x - barReserved;
+      }
+    } else {
+      result.left -= crossReserved;
+      if (edge == "bottom") {
+        result.top = 0;
+        result.bottom = outputHeight - height - y - barReserved;
+      } else result.top -= barReserved;
+    }
+    return result;
+  }
+
+  [[nodiscard]] inline std::uint32_t limitExtent(
+      std::uint32_t preferred, std::int32_t available, std::int32_t bleed, std::int32_t padding) {
+    return std::min(preferred, static_cast<std::uint32_t>(std::max(1, available - bleed - padding)));
+  }
 
   [[nodiscard]] inline CornerShapes cornerShapes(std::string_view barPosition) {
     // Stagecraft replaces both the rounded away-side corners and the concave bar-side

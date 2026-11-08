@@ -4,6 +4,7 @@
 #include "render/animation/animation_manager.h"
 #include "render/scene/input_dispatcher.h"
 #include "shell/panel/attached_panel_context.h"
+#include "shell/panel/hover_panel_state.h"
 #include "shell/panel/panel_click_shield.h"
 #include "shell/panel/persistent_panel_host.h"
 #include "ui/dialogs/layer_popup_host.h"
@@ -107,6 +108,8 @@ public:
   void togglePanel(const std::string& panelId, PanelOpenRequest request);
   // IPC-friendly overload: asks CompositorPlatform for preferred interactive output.
   void togglePanel(const std::string& panelId);
+  void enterHoverTrigger(HoverPanelState::Key key, const std::string& panelId, PanelOpenRequest request);
+  void leaveHoverTrigger(HoverPanelState::Key key);
 
   bool onPointerEvent(const PointerEvent& event);
   void onKeyboardEvent(const KeyboardEvent& event);
@@ -209,6 +212,9 @@ private:
   void applyAttachedDecorationStyle();
   // Submit a wl_region matching the panel body after applying the current reveal clip.
   void applyPanelCompositorBlur(int bodyX, int bodyY, int bodyW, int bodyH, int clipX, int clipY, int clipW, int clipH);
+  void syncHoverTimer();
+  void updateHoverPopupHold();
+  void cancelHoverReveal();
 
   CompositorPlatform* m_platform = nullptr;
   ConfigService* m_config = nullptr;
@@ -278,6 +284,14 @@ private:
   AttachedRevealDirection m_attachedRevealDirection = AttachedRevealDirection::Down;
   AttachedRevealDirection m_detachedRevealDirection = AttachedRevealDirection::Down;
   Timer m_keyboardRelaxTimer;
+  HoverPanelState m_hoverState;
+  Timer m_hoverTimer;
+  std::string m_hoverPanelId;
+  std::string m_pendingHoverPanelId;
+  std::string m_hoverContext;
+  std::string m_hoverBarName;
+  PanelOpenRequest m_hoverRequest;
+  bool m_openingHoverPanel = false;
   std::string m_attachedBarPosition; // "top" / "bottom" / "left" / "right" while attached, empty otherwise
   std::string m_sourceBarName;       // name of the bar that opened the current panel
   std::optional<AttachedPanelGeometry> m_attachedPanelGeometry;

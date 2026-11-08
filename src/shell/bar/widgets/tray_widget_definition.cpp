@@ -19,6 +19,8 @@ const noctalia::bar::WidgetDefinition<TrayWidget::Options, TrayWidgetDefinitionC
               field<&Options::hidePassive>({
                   .key = "hide_passive",
               }),
+              field<&Options::pinnedOnly>({.key = "pinned_only"}),
+              field<&Options::drawerList>({.key = "drawer_list"}),
               field<&Options::matchAdjacentSpacing>({
                   .key = "match_adjacent_spacing",
               }),
@@ -52,6 +54,7 @@ const noctalia::bar::WidgetDefinition<TrayWidget::Options, TrayWidgetDefinitionC
                           .visibleWhen = drawerOn,
                       },
               }),
+              field<&Options::drawerBackgroundImage>({.key = "drawer_background_image"}),
           },
       .finalize = [](Options& options, const TrayWidgetDefinitionContext& context) {
         options.barPosition = context.barPosition;

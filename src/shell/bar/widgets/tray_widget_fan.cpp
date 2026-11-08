@@ -251,7 +251,7 @@ void TrayWidget::refreshFanPalette() {
 }
 
 void TrayWidget::changeFanPage(int direction) {
-  if (!tray::fanActionsEnabled(m_fanProgress))
+  if (!tray::fanActionsEnabled(m_revealProgress))
     return;
   const tray::FanLayout layout(m_fanItemCount, m_fanPage, m_fanExtent);
   const auto next =
@@ -283,21 +283,25 @@ void TrayWidget::layoutFanScene(float extent) {
   }
   if (m_fanPivot)
     m_fanPivot->setPosition(layout.pivot().x - 12.0F * layout.scale(), 0);
-  setFanReveal(m_fanProgress);
+  setDrawerReveal(m_revealProgress);
 }
 
-void TrayWidget::setFanReveal(float progress) {
-  m_fanProgress = std::clamp(progress, 0.0F, 1.0F);
+void TrayWidget::setDrawerReveal(float progress) {
+  m_revealProgress = std::clamp(progress, 0.0F, 1.0F);
   const auto leaves = m_fanLeaves.empty() ? 1U : m_fanLeaves.size() - 1;
   for (std::size_t i = 0; i < m_fanLeaves.size(); ++i) {
-    m_fanLeaves[i]->setRotation(tray::fanLeafAngle(i, m_fanProgress, leaves));
+    m_fanLeaves[i]->setRotation(tray::fanLeafAngle(i, m_revealProgress, leaves));
     // Last leaf is the outer closing rib; its paper remains folded.
-    m_fanLeaves[i]->setScale(1, i == leaves ? 0.015F : std::max(0.015F, m_fanProgress));
+    m_fanLeaves[i]->setScale(1, i == leaves ? 0.015F : std::max(0.015F, m_revealProgress));
   }
   if (m_fanContent)
-    m_fanContent->setOpacity(tray::fanContentOpacity(m_fanProgress));
+    m_fanContent->setOpacity(tray::fanContentOpacity(m_revealProgress));
   if (m_fanOutline)
-    m_fanOutline->setOpacity(tray::fanContentOpacity(m_fanProgress));
+    m_fanOutline->setOpacity(tray::fanContentOpacity(m_revealProgress));
   for (auto* area : m_fanInputs)
-    area->setEnabled(tray::fanActionsEnabled(m_fanProgress));
+    area->setEnabled(tray::fanActionsEnabled(m_revealProgress));
+  if (m_foldContent)
+    m_foldContent->setOpacity(tray::fanContentOpacity(m_revealProgress));
+  for (auto* area : m_foldInputs)
+    area->setEnabled(tray::fanActionsEnabled(m_revealProgress));
 }

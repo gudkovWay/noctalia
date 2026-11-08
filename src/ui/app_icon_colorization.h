@@ -26,7 +26,9 @@ struct ShellAppIconColorizationSettings {
 [[nodiscard]] ShellAppIconColorizationSettings shellAppIconColorizationSettings(const ShellConfig& shell) noexcept;
 [[nodiscard]] std::optional<ColorSpec> effectiveShellAppIconColorizationTint(const ShellConfig& shell) noexcept;
 [[nodiscard]] AppIconColorizationStyle resolveAppIconColorization(const ColorSpec& tint) noexcept;
-void bakeAppIconForColorization(std::uint8_t* rgba, int width, int height, const Color& tint) noexcept;
+void bakeAppIconForColorization(
+    std::uint8_t* rgba, int width, int height, const Color& tint, bool preserveInk = false
+) noexcept;
 
 [[nodiscard]] Signal<>& shellAppIconColorizationChanged() noexcept;
 void notifyShellAppIconColorizationChanged() noexcept;

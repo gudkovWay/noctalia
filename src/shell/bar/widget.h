@@ -16,11 +16,13 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 class AnimationManager;
 class Box;
 class InputArea;
 struct PointerEvent;
+struct InputRect;
 
 namespace noctalia::bar {
   class WidgetActionDispatcher;
@@ -68,7 +70,13 @@ public:
   [[nodiscard]] virtual bool isBarSurface() const noexcept { return false; }
   [[nodiscard]] virtual float barSurfaceInset() const noexcept { return 0.0F; }
   virtual void setBarGeometry(float, float, float, float) {}
+  [[nodiscard]] virtual bool hasCustomInputRegions() const noexcept { return false; }
+  // True means the widget declared its own surface-local pointer rectangles.
+  [[nodiscard]] virtual bool appendInputRegions(std::vector<InputRect>&) const { return false; }
 
+  [[nodiscard]] const std::optional<BarWidgetRect>& barRect() const noexcept { return m_barRect; }
+  [[nodiscard]] std::string_view hoverPanel() const noexcept { return m_hoverPanel; }
+  [[nodiscard]] std::string_view hoverContext() const noexcept { return m_hoverContext; }
   // The node this widget built. Widgets size and position it in doLayout().
   [[nodiscard]] Node* root() const noexcept { return m_innerRoot; }
   // The node the bar mounts: a transparent InputArea wrapping root(), carrying gesture actions.
@@ -145,6 +153,7 @@ public:
   [[nodiscard]] ColorSpec widgetIconColorOr(const ColorSpec& fallback) const noexcept;
 
 protected:
+  [[nodiscard]] const IpcInvocationContext& actionContext() const noexcept { return m_actionContext; }
   void requestUpdate();
   void requestRedraw();
   void requestFrameTick();
@@ -214,4 +223,7 @@ private:
   noctalia::bar::ScrollRepeatMode m_scrollRepeatMode = noctalia::bar::ScrollRepeatMode::Auto;
   const noctalia::bar::WidgetActionDispatcher* m_actionDispatcher = nullptr;
   IpcInvocationContext m_actionContext;
+  std::optional<BarWidgetRect> m_barRect;
+  std::string m_hoverPanel;
+  std::string m_hoverContext;
 };

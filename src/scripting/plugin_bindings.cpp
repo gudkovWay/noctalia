@@ -571,6 +571,10 @@ namespace {
     if (context == nullptr) {
       return 0;
     }
+    // Each ancestor retains its children table and current child; props/handlers need up to five more slots.
+    if (!lua_checkstack(L, (kUiTreeMaxDepth + 1) * 2 + 8)) {
+      luaL_error(L, "render: cannot reserve UI tree stack");
+    }
     // Function-valued props are registered into a fresh table that becomes the
     // live one only once the whole tree has read back cleanly.
     lua_newtable(L);

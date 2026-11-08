@@ -16,6 +16,7 @@
 #include "ui/builders.h"
 #include "ui/style.h"
 #include "util/string_utils.h"
+#include "util/file_utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -78,6 +79,7 @@ WorkspacesWidget::WorkspacesWidget(
       m_showAllOutputs(options.showAllOutputs), m_pillScale(options.pillScale),
       m_activePillSize(std::clamp(options.activePillSize, 0.25F, 8.0F)),
       m_inactivePillSize(std::clamp(options.inactivePillSize, 0.25F, 8.0F)), m_style(options.style),
+      m_workspaceImages(std::move(options.workspaceImages)), m_activeImage(std::move(options.activeImage)),
       m_focusedOutputOnly(options.focusedOutputOnly), m_changeColorOnHover(options.changeColorOnHover),
       m_focusedColor(options.focusedColor), m_occupiedColor(options.occupiedColor), m_emptyColor(options.emptyColor),
       m_urgentColor(options.urgentColor) {
@@ -158,9 +160,21 @@ void WorkspacesWidget::applyItemVisualStyle(Item& item) {
   if (item.indicator != nullptr) {
     item.indicator->setFill(workspaceFillColor(item.visualWorkspace, item.output));
     item.indicator->clearBorder();
+    if (isCards()) {
+      item.indicator->setBorder(
+          fixedColorSpec(item.visualWorkspace.urgent ? rgba(0.88F, 0.25F, 0.30F, 1.0F)
+                         : item.visualWorkspace.active ? rgba(0.46F, 0.20F, 0.31F, 1.0F)
+                                                       : rgba(0.22F, 0.20F, 0.23F, 1.0F)),
+          (item.visualWorkspace.active || item.visualWorkspace.urgent ? 1.6F : 0.8F) * m_contentScale);
+    }
   }
   if (item.text != nullptr && item.showLabel) {
     item.text->setColor(workspaceTextColor(item.visualWorkspace, item.output));
+  }
+  if (item.occupancy != nullptr) {
+    item.occupancy->setVisible(item.visualWorkspace.occupied || item.visualWorkspace.urgent);
+    item.occupancy->setFill(fixedColorSpec(item.visualWorkspace.urgent ? rgba(0.88F, 0.25F, 0.30F, 1.0F)
+                                                                    : rgba(0.68F, 0.61F, 0.65F, 1.0F)));
   }
 }
 
@@ -445,9 +459,10 @@ void WorkspacesWidget::rebuild(Renderer& renderer) {
     }
   }
 
-  const float gap = kWorkspaceGap * m_contentScale;
-  const float labelFontSize = workspaceLabelFontSize(isMinimal()) * fontScale();
-  const float pillHeight = std::round(kWorkspacePillDefaultHeight * m_contentScale * m_pillScale);
+  const float gap = (isCards() ? 12.0F : kWorkspaceGap) * m_contentScale;
+  const float labelFontSize = (isCards() ? 12.0F : workspaceLabelFontSize(isMinimal())) * fontScale();
+  const float pillHeight = isCards() ? 104.0F * m_contentScale
+                                    : std::round(kWorkspacePillDefaultHeight * m_contentScale * m_pillScale);
   // Active and inactive labels share the configured weight: a heavier weight selects a different
   // face whose digits sit at a different height.
   const FontWeight configuredFontWeight = labelFontWeight();
@@ -484,6 +499,11 @@ void WorkspacesWidget::rebuild(Renderer& renderer) {
       entry.showLabel = false;
       slot.inactiveWidth = 0.0F;
       slot.activeWidth = 0.0F;
+      continue;
+    }
+    if (isCards()) {
+      slot.inactiveWidth = 100.0F * m_contentScale;
+      slot.activeWidth = 112.0F * m_contentScale;
       continue;
     }
 
@@ -580,6 +600,10 @@ void WorkspacesWidget::rebuild(Renderer& renderer) {
           })
       ));
     }
+    if (isCards() && m_showLabels) {
+      item.occupancy = static_cast<Box*>(area->addChild(
+          ui::box({.fill = fixedColorSpec(rgba(0.68F, 0.61F, 0.65F, 1.0F)), .radius = 1.5F * m_contentScale})));
+    }
 
     if (entry.showLabel && !entry.label.empty()) {
       item.text = static_cast<Label*>(area->addChild(
@@ -595,7 +619,7 @@ void WorkspacesWidget::rebuild(Renderer& renderer) {
       item.text->measure(renderer);
     }
 
-    if (showsActiveIcon() && ws.active) {
+    if ((showsActiveIcon() && ws.active) || showsWorkspaceImage()) {
       item.showIcon = true;
       item.icon = static_cast<Image*>(area->addChild(
           ui::image({
@@ -686,6 +710,7 @@ void WorkspacesWidget::rebuild(Renderer& renderer) {
     if (!entry.exiting) {
       syncItemTooltip(item, ws);
     }
+    applyItemVisualStyle(item);
     m_items.push_back(item);
   }
 
@@ -839,8 +864,9 @@ void WorkspacesWidget::recalculateItemMetrics(
     Renderer& renderer, Item& item, const Workspace& workspace, std::size_t displayIndex
 ) {
   const std::string label = workspaceLabel(workspace, displayIndex);
-  const float labelFontSize = workspaceLabelFontSize(isMinimal()) * fontScale();
-  const float pillHeight = std::round(kWorkspacePillDefaultHeight * m_contentScale * m_pillScale);
+  const float labelFontSize = (isCards() ? 12.0F : workspaceLabelFontSize(isMinimal())) * fontScale();
+  const float pillHeight = isCards() ? 104.0F * m_contentScale
+                                    : std::round(kWorkspacePillDefaultHeight * m_contentScale * m_pillScale);
   const float baseSize = std::round(pillHeight);
   const float padding = isMinimal() ? (Style::spaceXs * m_contentScale) : (baseSize * 0.6F);
   const FontWeight configuredFontWeight = labelFontWeight();
@@ -866,7 +892,10 @@ void WorkspacesWidget::recalculateItemMetrics(
     textHeight = tm.bottom - tm.top;
   }
 
-  if (isMinimal()) {
+  if (isCards()) {
+    item.inactiveWidth = 100.0F * m_contentScale;
+    item.activeWidth = 112.0F * m_contentScale;
+  } else if (isMinimal()) {
     const float minWidth = baseSize;
     if (!item.showLabel) {
       item.inactiveWidth = minWidth;
@@ -901,7 +930,7 @@ void WorkspacesWidget::recalculateItemMetrics(
   }
 
   ensureItemLabel(renderer, item, workspace);
-  if (showsActiveIcon() && workspace.active && item.icon == nullptr && item.area != nullptr) {
+  if (((showsActiveIcon() && workspace.active) || showsWorkspaceImage()) && item.icon == nullptr && item.area != nullptr) {
     item.showIcon = true;
     item.icon = static_cast<Image*>(item.area->addChild(
         ui::image({
@@ -1112,6 +1141,28 @@ void WorkspacesWidget::applyItemLayout(Item& it) {
 
   it.area->setPosition(m_isVertical ? 0.0F : position, m_isVertical ? position : 0.0F);
   it.area->setFrameSize(itemW, itemH);
+  if (isCards()) {
+    if (it.indicator != nullptr) {
+      it.indicator->setPosition(2.0F * m_contentScale, 0);
+      it.indicator->setFrameSize(itemW - 4.0F * m_contentScale, 80.0F * m_contentScale);
+      it.indicator->setRadius(14.0F * m_contentScale);
+    }
+    if (it.icon != nullptr) {
+      const float iconSize = (it.workspace.active ? 60.0F : 48.0F) * m_contentScale;
+      it.icon->setVisible(it.showIcon && it.icon->hasImage());
+      it.icon->setSize(iconSize, iconSize);
+      it.icon->setPosition((itemW - iconSize) * 0.5F, (80.0F * m_contentScale - iconSize) * 0.5F);
+    }
+    if (it.text != nullptr) {
+      it.text->setVisible(it.showLabel);
+      it.text->setPosition(std::max(0.0F, (itemW - it.text->width()) * 0.5F), 84.0F * m_contentScale);
+    }
+    if (it.occupancy != nullptr) {
+      it.occupancy->setPosition(itemW * 0.5F - 2.0F * m_contentScale, 101.0F * m_contentScale);
+      it.occupancy->setFrameSize(4.0F * m_contentScale, 2.0F * m_contentScale);
+    }
+    return;
+  }
   if (it.indicator != nullptr) {
     if (isFocusHint() && !it.workspace.active) {
       const float dotSize = focusedPillDotSize();
@@ -1140,8 +1191,8 @@ void WorkspacesWidget::applyItemLayout(Item& it) {
       && !it.label.empty()
       && it.currentWidth + 0.5F >= it.inactiveWidth
       && (!isFocusHint() || it.workspace.active);
-  const bool showIcon =
-      showsActiveIcon() && it.workspace.active && it.showIcon && it.icon != nullptr && it.icon->hasImage();
+  const bool showIcon = (showsWorkspaceImage() || (showsActiveIcon() && it.workspace.active))
+      && it.showIcon && it.icon != nullptr && it.icon->hasImage();
   if (it.text != nullptr) {
     it.text->setVisible(showText);
   }
@@ -1152,7 +1203,7 @@ void WorkspacesWidget::applyItemLayout(Item& it) {
     return;
   }
 
-  const float iconSize = focusedPillIconSize();
+  const float iconSize = showsWorkspaceImage() ? std::min(itemW, itemH) * 0.78F : focusedPillIconSize();
   const float iconGap = Style::spaceXs * m_contentScale;
 
   if (m_isVertical) {
@@ -1377,6 +1428,21 @@ std::string WorkspacesWidget::resolveIconPath(const std::string& appId) {
 }
 
 void WorkspacesWidget::syncActiveWindowIcon(Renderer& renderer, Item& item) {
+  if (showsWorkspaceImage() && item.icon != nullptr) {
+    const auto index = cardImageIndex(item.workspace, m_workspaceImages.size());
+    const std::string_view path = isCards() && item.workspace.active && !m_activeImage.empty()
+        ? std::string_view(m_activeImage) : index ? std::string_view(m_workspaceImages[*index]) : std::string_view{};
+    item.showIcon = !path.empty();
+    if (path != item.iconPath) {
+      item.iconPath = path;
+      if (path.empty())
+        item.icon->clear(renderer);
+      else
+        item.icon->setSourceFile(renderer, FileUtils::expandUserPath(item.iconPath).string(),
+                                static_cast<int>((isCards() ? 120.0F : 48.0F) * m_contentScale), true);
+    }
+    return;
+  }
   if (!showsActiveIcon() || item.icon == nullptr) {
     return;
   }
@@ -1408,6 +1474,15 @@ void WorkspacesWidget::syncActiveWindowIcon(Renderer& renderer, Item& item) {
   } else {
     item.icon->clear(renderer);
   }
+}
+
+std::optional<std::size_t> WorkspacesWidget::cardImageIndex(const Workspace& workspace, std::size_t count) {
+  if (count == 0)
+    return std::nullopt;
+  const auto ordinal = workspace.index > 0 ? std::optional<std::size_t>(workspace.index) : numericWorkspaceId(workspace);
+  if (!ordinal || *ordinal == 0)
+    return std::nullopt;
+  return (*ordinal - 1) % count;
 }
 
 std::string WorkspacesWidget::workspaceLabel(const Workspace& workspace, std::size_t displayIndex) const {

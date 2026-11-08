@@ -74,6 +74,8 @@ uniform vec4 u_scrim_color0;
 uniform vec4 u_scrim_color1;
 uniform vec4 u_scrim_color2;
 uniform vec4 u_scrim_color3;
+uniform int u_hem_enabled;
+uniform float u_hem[24];
 varying vec2 v_texcoord;
 varying vec2 v_local;
 
@@ -111,9 +113,18 @@ void main() {
         discard;
     }
 
-    vec2 sample_uv = clamp(v_texcoord, vec2(0.0), vec2(1.0));
-    vec4 texel = texture2D(u_texture, sample_uv);
-    if (v_texcoord.x < 0.0 || v_texcoord.x > 1.0 || v_texcoord.y < 0.0 || v_texcoord.y > 1.0) {
+    vec2 image_uv = v_texcoord;
+    if (u_hem_enabled != 0) {
+        float band = clamp(image_uv.x, 0.0, 1.0) * 23.0;
+        float offset = 0.0;
+        for (int i = 0; i < 24; ++i) {
+            float weight = max(0.0, 1.0 - abs(band - float(i)));
+            offset += u_hem[i] * weight;
+        }
+        image_uv.y += offset * smoothstep(0.35, 1.0, image_uv.y);
+    }
+    vec4 texel = texture2D(u_texture, clamp(image_uv, vec2(0.0), vec2(1.0)));
+    if (image_uv.x < 0.0 || image_uv.x > 1.0 || image_uv.y < 0.0 || image_uv.y > 1.0) {
         texel = vec4(0.0);
     }
     vec4 fill;
@@ -185,6 +196,8 @@ void ImageProgram::ensureInitialized() {
   m_scrimColor1Location = glGetUniformLocation(m_program.id(), "u_scrim_color1");
   m_scrimColor2Location = glGetUniformLocation(m_program.id(), "u_scrim_color2");
   m_scrimColor3Location = glGetUniformLocation(m_program.id(), "u_scrim_color3");
+  m_hemEnabledLocation = glGetUniformLocation(m_program.id(), "u_hem_enabled");
+  m_hemLocation = glGetUniformLocation(m_program.id(), "u_hem[0]");
 
   if (m_positionLocation < 0
       || m_texCoordLocation < 0
@@ -207,7 +220,9 @@ void ImageProgram::ensureInitialized() {
       || m_scrimColor0Location < 0
       || m_scrimColor1Location < 0
       || m_scrimColor2Location < 0
-      || m_scrimColor3Location < 0) {
+      || m_scrimColor3Location < 0
+      || m_hemEnabledLocation < 0
+      || m_hemLocation < 0) {
     throw std::runtime_error("failed to query image shader locations");
   }
 }
@@ -236,6 +251,8 @@ void ImageProgram::destroy() {
   m_scrimColor1Location = -1;
   m_scrimColor2Location = -1;
   m_scrimColor3Location = -1;
+  m_hemEnabledLocation = -1;
+  m_hemLocation = -1;
 }
 
 void ImageProgram::abandon() noexcept { m_program.abandon(); }
@@ -243,7 +260,8 @@ void ImageProgram::abandon() noexcept { m_program.abandon(); }
 void ImageProgram::draw(
     TextureId texture, float surfaceWidth, float surfaceHeight, float width, float height, const Color& tint,
     bool monochromeTint, bool alphaMaskTint, float opacity, float radius, const Color& borderColor, float borderWidth,
-    int fitMode, float textureWidth, float textureHeight, const Mat3& transform, const ImageScrim& scrim
+    int fitMode, float textureWidth, float textureHeight, const Mat3& transform, const ImageScrim& scrim,
+    const ImageHem& hem
 ) const {
   if (!m_program.isValid() || texture == 0 || width <= 0.0F || height <= 0.0F) {
     return;
@@ -271,6 +289,9 @@ void ImageProgram::draw(
   glUniform1i(m_fitModeLocation, fitMode);
   glUniformMatrix3fv(m_transformLocation, 1, GL_FALSE, transform.m.data());
   glUniform1i(m_scrimEnabledLocation, scrim.enabled ? 1 : 0);
+  glUniform1i(m_hemEnabledLocation, hem.enabled ? 1 : 0);
+  if (hem.enabled)
+    glUniform1fv(m_hemLocation, static_cast<GLsizei>(hem.offsets.size()), hem.offsets.data());
   glUniform2f(
       m_scrimDirectionLocation, scrim.direction == GradientDirection::Horizontal ? 1.0F : 0.0F,
       scrim.direction == GradientDirection::Vertical ? 1.0F : 0.0F

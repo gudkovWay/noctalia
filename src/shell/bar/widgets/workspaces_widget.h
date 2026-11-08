@@ -25,6 +25,7 @@ enum class WorkspacesStyle : std::uint8_t {
   Regular,
   Minimal,
   FocusHint,
+  Cards,
 };
 
 enum class WorkspacesLabelSource : std::uint8_t {
@@ -53,6 +54,8 @@ public:
     float activePillSize = 2.2F;
     float inactivePillSize = 1.0F;
     bool focusedOutputOnly = false;
+    std::vector<std::string> workspaceImages;
+    std::string activeImage;
   };
 
   WorkspacesWidget(CompositorPlatform& platform, ConfigService& config, wl_output* output, Options options);
@@ -84,6 +87,7 @@ private:
   [[nodiscard]] float workspaceMainAxisMinWidth(float baseSize, bool active) const noexcept;
 
   [[nodiscard]] static std::optional<std::size_t> numericWorkspaceId(const Workspace& workspace);
+  [[nodiscard]] static std::optional<std::size_t> cardImageIndex(const Workspace& workspace, std::size_t count);
   [[nodiscard]] std::string workspaceLabel(const Workspace& workspace, std::size_t displayIndex) const;
   // The workspace name, unless the pill already shows it in full. Empty means no tooltip.
   [[nodiscard]] static std::string
@@ -100,6 +104,10 @@ private:
   [[nodiscard]] bool shouldShowWorkspaceLabel(const Workspace& workspace, std::string_view label) const noexcept;
   [[nodiscard]] bool isMinimal() const noexcept { return m_style == WorkspacesStyle::Minimal; }
   [[nodiscard]] bool isFocusHint() const noexcept { return m_style == WorkspacesStyle::FocusHint; }
+  [[nodiscard]] bool isCards() const noexcept { return m_style == WorkspacesStyle::Cards; }
+  [[nodiscard]] bool showsWorkspaceImage() const noexcept {
+    return isCards() || (m_style == WorkspacesStyle::Regular && m_showIcons && !m_workspaceImages.empty());
+  }
   // FocusHint is the only style that draws the focused app icon.
   [[nodiscard]] bool showsActiveIcon() const noexcept { return isFocusHint() && m_showIcons; }
   [[nodiscard]] bool isWorkspaceHidden(const Workspace& workspace) const noexcept;
@@ -125,6 +133,7 @@ private:
     Box* indicator = nullptr;
     Label* text = nullptr;
     Image* icon = nullptr;
+    Box* occupancy = nullptr;
     Workspace workspace;
     Workspace visualWorkspace;
     wl_output* output = nullptr;
@@ -180,6 +189,8 @@ private:
   float m_activePillSize = 2.2F;
   float m_inactivePillSize = 1.0F;
   WorkspacesStyle m_style = WorkspacesStyle::Regular;
+  std::vector<std::string> m_workspaceImages;
+  std::string m_activeImage;
   bool m_focusedOutputOnly = false;
   bool m_changeColorOnHover = true;
   wl_output* m_lastFocusedOutput = nullptr;

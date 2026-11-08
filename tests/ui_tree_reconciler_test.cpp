@@ -7,6 +7,7 @@
 #include "render/scene/input_area.h"
 #include "render/scene/input_dispatcher.h"
 #include "render/scene/rect_node.h"
+#include "render/scene/image_node.h"
 #include "ui/controls/box.h"
 #include "ui/controls/button.h"
 #include "ui/controls/drag_source.h"
@@ -15,6 +16,7 @@
 #include "ui/controls/glyph.h"
 #include "ui/controls/graph.h"
 #include "ui/controls/input.h"
+#include "ui/controls/image.h"
 #include "ui/controls/label.h"
 #include "ui/controls/scroll_view.h"
 #include "ui/controls/select.h"
@@ -27,8 +29,10 @@
 #include "ui/ui_tree.h"
 #include "ui/ui_tree_reconciler.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <optional>
+#include <limits>
 #include <print>
 #include <string>
 #include <utility>
@@ -149,6 +153,31 @@ namespace {
 int main() {
   bool ok = true;
   StubRenderer renderer;
+  {
+    Flex host;
+    ui::UiTreeReconciler reconciler;
+    auto image = makeNode("image");
+    image.props.emplace("width", 100.0);
+    image.props.emplace("height", 100.0);
+    image.props.emplace("hem", std::vector<double>(24, 0.2));
+    reconciler.reconcile(host, image, renderer);
+    auto* rendered = findFirst<ImageNode>(host);
+    ok &= expect(rendered && rendered->hem().enabled && rendered->hem().offsets[12] == 0.1F,
+                 "image displacement must be bounded before reaching the shader");
+    image.props["hem"] = std::vector<double>{0.05};
+    reconciler.reconcile(host, image, renderer);
+    ok &= expect(rendered && !rendered->hem().enabled, "short hem data retained stale deformation");
+    auto invalid = std::vector<double>(24, 0.05);
+    invalid[7] = std::numeric_limits<double>::quiet_NaN();
+    image.props["hem"] = invalid;
+    reconciler.reconcile(host, image, renderer);
+    ok &= expect(rendered && !rendered->hem().enabled, "nonfinite hem reached the shader");
+    image.props["hem"] = std::vector<double>(24, 0.05);
+    reconciler.reconcile(host, image, renderer);
+    image.props.erase("hem");
+    reconciler.reconcile(host, image, renderer);
+    ok &= expect(rendered && !rendered->hem().enabled, "removing hem did not restore an ordinary retained image");
+  }
 
   // One hover envelope covers the stationary cover, grips and revealed text.
   // Empty bar layout lanes must not swallow it or disable foreground controls.
@@ -2951,6 +2980,62 @@ int main() {
              "an unchanged re-render keeps the graph's coalescing stream"
          )
         && ok;
+  }
+
+  // Absolute plugin panes still have a fixed viewport when their first body is a loading label.
+  for (const float scale : {1.0F, 1.2F}) {
+    ui::UiTreeReconciler reconciler;
+    reconciler.setScale(scale);
+    Flex host;
+    host.setSize(1180.0F * scale, 760.0F * scale);
+    auto root = makeNode("box");
+    root.props = {{"width", 1180.0}, {"height", 760.0}};
+    auto pane = makeNode("column");
+    pane.key = "main-pane";
+    pane.props = {{"width", 756.0}, {"height", 466.0}, {"gap", 8.0}};
+    auto heading = makeNode("row");
+    heading.key = "heading";
+    heading.props["height"] = 38.0;
+    auto scroll = makeNode("scroll");
+    scroll.key = "view-scroll";
+    scroll.props = {{"flexGrow", 1.0}, {"padding", 0.0}};
+    scroll.children.push_back(makeLabel("Loading recommendations", "loading"));
+    pane.children = {heading, scroll};
+    root.children.push_back(pane);
+    (void)reconciler.reconcile(host, root, renderer);
+    host.layout(renderer);
+    auto* viewport = findFirst<ScrollView>(host);
+    ok = expect(viewport != nullptr, "absolute pane has a scroll viewport") && ok;
+    if (viewport == nullptr) continue;
+    ok = expect(std::abs(viewport->height() - 420.0F * scale) < 0.1F,
+                "loading label must not determine a fixed pane's viewport height") && ok;
+
+    auto results = makeNode("column");
+    results.key = "results";
+    for (int i = 0; i < 6; ++i) {
+      auto row = makeNode("row");
+      row.key = std::to_string(i);
+      row.props["height"] = 44.0;
+      results.children.push_back(std::move(row));
+    }
+    root.children[0].children[0].props["height"] = 140.0;
+    root.children[0].children[1].children = {results};
+    (void)reconciler.reconcile(host, root, renderer);
+    host.layout(renderer);
+    ok = expect(findFirst<ScrollView>(host) == viewport, "navigation retains the viewport control") && ok;
+    ok = expect(std::abs(viewport->height() - 318.0F * scale) < 0.1F,
+                "search after loading recommendations must use the remaining pane height") && ok;
+    ok = expect(viewport->maxScrollOffset() < 0.1F,
+                "six fitting search rows must not be clipped behind a loading-sized viewport") && ok;
+
+    root.children[0].props["width"] = 600.0;
+    root.children[0].props["height"] = 386.0;
+    root.children[0].children[0].props["height"] = 38.0;
+    (void)reconciler.reconcile(host, root, renderer);
+    host.layout(renderer);
+    ok = expect(std::abs(viewport->width() - 600.0F * scale) < 0.1F
+                    && std::abs(viewport->height() - 340.0F * scale) < 0.1F,
+                "resizing a retained absolute pane updates both viewport axes") && ok;
   }
 
   return ok ? 0 : 1;

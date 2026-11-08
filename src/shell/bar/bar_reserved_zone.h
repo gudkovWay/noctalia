@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string_view>
 
 /// Layer-shell exclusive zone the bar reserves on its anchored screen edge.
 /// Canonical definition shared by the bar surface and attached panels so a panel
@@ -69,4 +70,9 @@ barEdgeLayerMargin(const BarConfig& barConfig, const ShellConfig::ShadowConfig& 
 [[nodiscard]] inline std::int32_t
 reservedBarEdgeDistance(const BarConfig& barConfig, const ShellConfig::ShadowConfig& shadowConfig) {
   return reservedBarExclusiveZone(barConfig, shadowConfig) + barEdgeLayerMargin(barConfig, shadowConfig);
+}
+
+[[nodiscard]] inline std::int32_t reservedBarDistanceOnEdge(
+    const BarConfig& bar, const ShellConfig::ShadowConfig& shadow, std::string_view edge) {
+  return bar.enabled && bar.reserveSpace && bar.position == edge ? reservedBarEdgeDistance(bar, shadow) : 0;
 }

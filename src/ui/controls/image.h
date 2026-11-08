@@ -33,10 +33,11 @@ public:
   // Darkens the image's texels with a linear gradient inside the image draw, so a scrimmed image
   // keeps a single antialiased edge instead of needing a rounded rect stacked on top.
   void setScrim(const ImageScrim& scrim);
+  void setHem(const std::vector<double>& offsets);
   void setBorder(const ColorSpec& color, float width);
   void setBorder(const Color& color, float width);
   void setTint(const Color& tint);
-  void setAppIconColorization(std::optional<ColorSpec> tint);
+  void setAppIconColorization(std::optional<ColorSpec> tint, bool preserveInk = false);
   // Alpha-mask recolor for bar widget custom_image (widget Color, not app-icon bake).
   void setForegroundTint(std::optional<ColorSpec> tint);
   void setFit(ImageFit fit);
@@ -116,6 +117,7 @@ private:
   ColorSpec m_border = clearColorSpec();
   float m_borderWidth = 0.0F;
   std::optional<ColorSpec> m_appIconColorizeTint;
+  bool m_preserveAppIconInk = false;
   std::optional<ColorSpec> m_foregroundTint;
   std::vector<std::uint8_t> m_colorizationSource;
   int m_colorizationSourceWidth = 0;

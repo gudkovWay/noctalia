@@ -1409,6 +1409,7 @@ namespace {
     if (heavy.has_value()) {
       copyString(*heavy, "title", out);
       copyString(*heavy, "artist", out);
+      copyString(*heavy, "album", out);
       copyString(*heavy, "artPath", out);
       copyString(*heavy, "status", out);
       copyNumber(*heavy, "position", out);

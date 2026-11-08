@@ -1166,6 +1166,14 @@ install_data(
 
 if build_tests
   wayland_server_dep = dependency('wayland-server')
+  executable('mina_owned_pointer', 'tests/mina_owned_pointer.cpp',
+    dependencies: wayland_client_dep,
+    build_by_default: false,
+  )
+  executable('mina_owned_tray', 'tests/mina_owned_tray.cpp',
+    dependencies: sdbus_cpp_dep,
+    build_by_default: false,
+  )
 
   _wlr_screencopy_test_server_h = custom_target('wlr-screencopy-unstable-v1-test-server-header',
     input: 'protocols/wlr-screencopy-unstable-v1.xml',
@@ -1263,6 +1271,11 @@ if build_tests
     'network_display',
     'music_preview_spectrum',
     'music_preview_widget',
+    'mina_music_widget',
+    'skin_music_metadata',
+    'tmus_panel',
+    'mina_resources',
+    'image_hem_render',
     'network_manager_security',
     'niri_workspace_backend',
     'notification_dnd',
@@ -1272,6 +1285,7 @@ if build_tests
     'notification_internal_history',
     'path_browse',
     'panel_cancel_capture',
+    'hover_panel',
     'pipewire_error',
     'plugin_bindings',
     'plugin_catalog',
@@ -1338,10 +1352,15 @@ if build_tests
       test_args = [meson.project_source_root() / 'assets' / 'translations']
     elif test_name == 'music_preview_spectrum'
       test_args = [meson.project_source_root() / 'integrations/skin-runtime/shared/music-spectrum.luau']
-    elif test_name == 'skin_music_bar'
+    elif test_name == 'skin_music_bar' or test_name == 'skin_music_metadata'
       test_args = [meson.project_source_root() / 'integrations']
     elif test_name == 'music_preview_widget'
       test_args = [meson.project_source_root() / 'integrations/skin-runtime']
+    elif test_name == 'mina_music_widget' or test_name == 'mina_resources'
+      test_args = [meson.project_source_root() / 'integrations/skin-runtime']
+    elif test_name == 'tmus_panel'
+      test_args = [meson.project_source_root() / 'integrations/tmus',
+        meson.project_source_root() / 'tests/tmus_panel_fixture.luau']
     elif test_name == 'ai_cassette'
       test_args = [meson.project_source_root() / 'integrations/ai-triage']
     endif

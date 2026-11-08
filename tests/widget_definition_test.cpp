@@ -121,6 +121,33 @@ namespace {
 
 int main() {
   const BatteryConfig batteryConfig;
+  for (const auto* key : {"bar_x", "bar_y", "bar_width", "bar_height", "bar_from_right", "hover_panel", "hover_context"}) {
+    if (!settings::findWidgetSettingField("clock", key).has_value())
+      fail("common", std::format("positioned hover setting '{}' is not validated", key));
+  }
+  WidgetConfig positioned;
+  positioned.settings["bar_x"] = 29.0;
+  positioned.settings["bar_y"] = 357.0;
+  positioned.settings["bar_width"] = 44.0;
+  positioned.settings["bar_height"] = 30.0;
+  positioned.settings["hover_panel"] = std::string("q/skin-runtime:mina-resources");
+  auto common = resolveCommonWidgetOptions(BarConfig{}, &positioned, "clock", 1.0F);
+  if (!common.barRect || common.barRect->x != 29 || common.barRect->y != 357
+      || common.barRect->width != 44 || common.barRect->height != 30
+      || common.hoverPanel != "q/skin-runtime:mina-resources")
+    fail("common", "positioned hover options did not reach the native widget");
+  positioned.settings["bar_from_right"] = true;
+  common = resolveCommonWidgetOptions(BarConfig{}, &positioned, "clock", 1.0F);
+  if (!common.barRect || common.barRect->left(3440) != 3367 || common.barRect->left(2560) != 2487
+      || common.barRect->left(50) != 0)
+    fail("common", "right-anchored targets do not follow output width or clamp on narrow surfaces");
+  positioned.settings["bar_from_right"] = false;
+  common = resolveCommonWidgetOptions(BarConfig{}, &positioned, "clock", 1.0F);
+  if (!common.barRect || common.barRect->left(3440) != 29)
+    fail("common", "default left-anchored target changed");
+  positioned.settings["bar_width"] = -1.0;
+  if (resolveCommonWidgetOptions(BarConfig{}, &positioned, "clock", 1.0F).barRect.has_value())
+    fail("common", "invalid absolute target rectangle was accepted");
 
   checkDefinition("active_window", activeWindowWidgetDefinition);
   checkDefinition("audio_visualizer", audioVisualizerWidgetDefinition);
@@ -252,6 +279,19 @@ int main() {
       || inputOptions.effectsProfileGlyphs
           != std::unordered_map<std::string, std::string>{{"Noise Canceling", "microphone"}}) {
     fail("volume", "input device or effects profile glyph map did not resolve");
+  }
+  if (!inputOptions.sliderShowThumb) {
+    fail("volume", "ordinary volume slider lost its default thumb");
+  }
+  WidgetConfig materialVolume;
+  materialVolume.type = "volume";
+  materialVolume.settings["slider"] = true;
+  materialVolume.settings["slider_show_thumb"] = false;
+  materialVolume.settings["slider_fill_image"] = std::string("/tmp/mina-volume-fill.png");
+  const auto materialOptions = volumeWidgetDefinition().resolve(&materialVolume, "volume");
+  if (!materialOptions.slider || materialOptions.sliderShowThumb
+      || materialOptions.sliderFillImage != "/tmp/mina-volume-fill.png") {
+    fail("volume", "fill-only volume configuration did not resolve independently of the thumb");
   }
   const auto inputGestures = noctalia::bar::gestureDefaultsForType("volume", &inputVolume);
   const auto inputMute =

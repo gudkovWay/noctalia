@@ -270,7 +270,7 @@ namespace {
     float x = 0.0F;
     float y = 0.0F;
     if (aLeft && aRight) {
-      x = mLeft;
+      x = mLeft + std::max(0.0F, outputW - mLeft - mRight - surfW) * 0.5F;
     } else if (aRight) {
       x = std::max(0.0F, outputW - mRight - surfW);
     } else {
@@ -278,7 +278,7 @@ namespace {
     }
 
     if (aTop && aBottom) {
-      y = mTop;
+      y = mTop + std::max(0.0F, outputH - mTop - mBottom - surfH) * 0.5F;
     } else if (aBottom) {
       y = std::max(0.0F, outputH - mBottom - surfH);
     } else {
@@ -1356,6 +1356,37 @@ namespace {
       layoutSurfaces(instance.centerWidgets);
       layoutSurfaces(instance.endWidgets);
     }
+    if (isVertical) {
+      const auto layoutSurfaces = [&](auto& widgets) {
+        for (auto& widget : widgets) {
+          if (!widget->isBarSurface())
+            continue;
+          widget->setBarGeometry(barAreaW, barAreaH, instance.startSection->height(), instance.endSection->height());
+          if (widget->outerNode())
+            widget->outerNode()->setPosition(0.0F, 0.0F);
+        }
+      };
+      layoutSurfaces(instance.startWidgets);
+      layoutSurfaces(instance.centerWidgets);
+      layoutSurfaces(instance.endWidgets);
+    }
+    const auto placeWidgets = [&](auto& widgets) {
+      for (auto& widget : widgets) {
+        if (!widget->barRect() || widget->root() == nullptr || widget->outerNode() == nullptr)
+          continue;
+        const auto& rect = *widget->barRect();
+        widget->layout(renderer, rect.width, rect.height);
+        auto* inner = widget->root();
+        auto* outer = widget->outerNode();
+        inner->setPosition(std::round((rect.width - inner->width()) * 0.5F),
+                           std::round((rect.height - inner->height()) * 0.5F));
+        outer->setPosition(rect.left(barAreaW), rect.y);
+        outer->setSize(rect.width, rect.height);
+      }
+    };
+    placeWidgets(instance.startWidgets);
+    placeWidgets(instance.centerWidgets);
+    placeWidgets(instance.endWidgets);
     applyBarWidgetHitTargets(instance.startSection, instance.startSlot, isVertical);
     applyBarWidgetHitTargets(instance.startSection, instance.startSlot, isVertical);
     applyBarWidgetHitTargets(instance.centerSection, instance.centerSlot, isVertical);
@@ -2868,7 +2899,16 @@ void Bar::attachWidgetsToSections(BarInstance& instance) {
         continue;
       }
 
-      if (!isVertical && widget->isBarSurface()) {
+      if (widget->barRect()) {
+        widget->setBarCapsuleScene(nullptr, nullptr);
+        auto* root = widget->outerNode();
+        root->setZIndex(1);
+        instance.widgetByRoot.emplace(root, widget.get());
+        instance.surfaceUnderlay->addChild(widget->releaseRoot());
+        ++index;
+        continue;
+      }
+      if (widget->isBarSurface()) {
         widget->setBarCapsuleScene(nullptr, nullptr);
         instance.surfaceUnderlay->addChild(widget->releaseRoot());
         ++index;
@@ -3199,10 +3239,12 @@ void Bar::syncBarAutoHideInputRegion(BarInstance& instance) const {
   const int surfW = static_cast<int>(instance.surface->width());
   const int surfH = static_cast<int>(instance.surface->height());
   if (!instanceAcceptsPointerInput(instance)) {
+    instance.customInputRectsValid = false;
     instance.surface->setInputRegion({});
     return;
   }
   if (barConfigUsesSlideSurface(instance.barConfig)) {
+    instance.customInputRectsValid = false;
     const bool fullSurface = instance.pointerInside
         || instance.attachedPopupCount > 0
         || instance.hideOpacity > 0.5F
@@ -3210,6 +3252,38 @@ void Bar::syncBarAutoHideInputRegion(BarInstance& instance) const {
     instance.surface->setInputRegion(barAutoHideSurfaceInputRegion(instance.barConfig, surfW, surfH, fullSurface));
     return;
   }
+  const auto customInput = [](const auto& widget) { return widget->hasCustomInputRegions(); };
+  if (std::ranges::any_of(instance.startWidgets, customInput)
+      || std::ranges::any_of(instance.centerWidgets, customInput)
+      || std::ranges::any_of(instance.endWidgets, customInput)) {
+    auto& regions = instance.pendingInputRects;
+    regions.clear();
+    const auto append = [&](const auto& widgets) {
+      for (const auto& widget : widgets) {
+        if (widget->appendInputRegions(regions))
+          continue;
+        if (widget->outerNode() != nullptr && widget->outerNode()->visible() && !widget->isBarClickThrough()) {
+          float x = 0.0F, y = 0.0F;
+          Node::absolutePosition(widget->outerNode(), x, y);
+          regions.push_back({static_cast<int>(std::floor(x)), static_cast<int>(std::floor(y)),
+                             static_cast<int>(std::ceil(widget->width())), static_cast<int>(std::ceil(widget->height()))});
+        }
+      }
+    };
+    append(instance.startWidgets);
+    append(instance.centerWidgets);
+    append(instance.endWidgets);
+    const bool unchanged = std::ranges::equal(regions, instance.customInputRects, [](const InputRect& a, const InputRect& b) {
+      return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+    });
+    if (!instance.customInputRectsValid || !unchanged) {
+      instance.surface->setInputRegion(regions);
+      instance.customInputRects.swap(regions);
+      instance.customInputRectsValid = true;
+    }
+    return;
+  }
+  instance.customInputRectsValid = false;
   instance.surface->setInputRegion({barContentInputRegion(
       instance.barConfig, m_config->config().shell.shadow, surfW, surfH, barContentMainSize(instance)
   )});
@@ -3449,13 +3523,26 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
     instance.inputDispatcher.setCursorShapeCallback([this](std::uint32_t serial, std::uint32_t shape) {
       m_platform->setCursorShape(serial, shape);
     });
-    instance.inputDispatcher.setHoverChangeCallback([this, inst = &instance](InputArea* /*old*/, InputArea* next) {
+    instance.inputDispatcher.setHoverChangeCallback([this, inst = &instance](InputArea* old, InputArea* next) {
       if (next != nullptr) {
         next->setTooltipPlacement(tooltipPlacementAwayFromEdge(inst->barConfig.position));
       }
       TooltipManager::instance().onBarHoverChange(next, inst->surface->layerSurface(), inst->output);
       updateWidgetHoverHighlight(*inst, next);
       updateAccordionExpansion(*inst, next);
+      auto* previous = widgetFromHoveredArea(*inst, old);
+      auto* current = widgetFromHoveredArea(*inst, next);
+      if (previous != current) {
+        auto& panels = PanelManager::instance();
+        if (previous != nullptr && !previous->hoverPanel().empty())
+          panels.leaveHoverTrigger(reinterpret_cast<std::uintptr_t>(previous));
+        if (current != nullptr && !current->hoverPanel().empty()) {
+          panels.enterHoverTrigger(
+              reinterpret_cast<std::uintptr_t>(current), std::string(current->hoverPanel()),
+              PanelOpenRequest{.output = inst->output, .context = current->hoverContext(),
+                               .sourceBarName = inst->barConfig.name});
+        }
+      }
     });
 
     if (instance.barConfig.smartAutoHide && m_platform != nullptr) {
@@ -3598,14 +3685,21 @@ void Bar::updateWidgets(BarInstance& instance) {
         continue;
       }
       widget->update(renderer);
-      widget->layout(renderer, barAreaW, barAreaH);
+      if (!barUsesContentWidth(instance.barConfig))
+        widget->layout(renderer, barAreaW, barAreaH);
     }
   };
 
   updateSection(instance.startWidgets);
   updateSection(instance.centerWidgets);
   updateSection(instance.endWidgets);
-  layoutBarSections(instance, renderer, barAreaW, barAreaH, padding, isVertical);
+  if (barUsesContentWidth(instance.barConfig)) {
+    syncBarContentSurfaceSize(instance, renderer, barAreaW, barAreaH, padding, isVertical);
+    layoutBarWidgets(instance, renderer, barAreaW, barAreaH, padding, isVertical);
+  } else {
+    layoutBarSections(instance, renderer, barAreaW, barAreaH, padding, isVertical);
+  }
+  syncBarAutoHideInputRegion(instance);
 }
 
 void Bar::prepareFrame(BarInstance& instance, bool needsUpdate, bool needsLayout) {
@@ -3860,6 +3954,18 @@ bool Bar::onPointerEvent(const PointerEvent& event) {
     const auto sx = static_cast<float>(event.sx);
     const auto sy = static_cast<float>(event.sy);
     bool pressed = event.pressed;
+    auto* trigger = widgetFromHoveredArea(*m_hoveredInstance, m_hoveredInstance->inputDispatcher.hoveredArea());
+    if (trigger != nullptr && !trigger->hoverPanel().empty()) {
+      auto& panels = PanelManager::instance();
+      if (pressed && (!panels.isOpen() || panels.activePanelId() != trigger->hoverPanel())) {
+        panels.leaveHoverTrigger(reinterpret_cast<std::uintptr_t>(trigger));
+      } else if (!pressed && !panels.isOpen()) {
+        panels.enterHoverTrigger(
+            reinterpret_cast<std::uintptr_t>(trigger), std::string(trigger->hoverPanel()),
+            PanelOpenRequest{.output = m_hoveredInstance->output, .context = trigger->hoverContext(),
+                             .sourceBarName = m_hoveredInstance->barConfig.name});
+      }
+    }
     consumed = m_hoveredInstance->inputDispatcher.pointerButton(
         sx, sy, event.button, pressed, event.serial, event.time, event.touch
     );

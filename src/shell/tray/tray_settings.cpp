@@ -22,6 +22,7 @@ namespace tray {
 
     ResolvedTrayOptions resolved{
         .options = trayWidgetDefinition().resolve(widgetConfig, widgetName, context),
+        .iconColor = widgetConfig != nullptr ? widgetConfig->getOptionalColorSpec("icon_color") : std::nullopt,
     };
     // The drawer distinguishes an omitted item size from the schema default. Keep
     // that single presence check beside the definition-owned resolution.

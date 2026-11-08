@@ -40,6 +40,8 @@ const noctalia::bar::WidgetDefinition<WorkspacesWidget::Options>& workspacesWidg
       .type = "workspaces",
       .fields =
           {
+              field<&Options::workspaceImages>({.key = "workspace_images"}),
+              field<&Options::activeImage>({.key = "active_image"}),
               field<&Options::hideWhenEmpty>({
                   .key = "hide_when_empty",
                   .presentation =
@@ -141,6 +143,11 @@ const noctalia::bar::WidgetDefinition<WorkspacesWidget::Options>& workspacesWidg
                               .value = WorkspacesStyle::FocusHint,
                               .configValue = "focus_hint",
                               .labelKey = "settings.widgets.options.focus-hint",
+                          },
+                          {
+                              .value = WorkspacesStyle::Cards,
+                              .configValue = "cards",
+                              .labelKey = "settings.widgets.options.cards",
                           },
                       },
                   .presentation =

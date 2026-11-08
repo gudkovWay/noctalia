@@ -347,10 +347,10 @@ std::unique_ptr<Widget> WidgetFactory::create(
             );
           }},
       {"volume", [](const WidgetFactory& f, const BuiltinWidgetContext& context) {
+            auto options = volumeWidgetDefinition().resolve(context.config, context.settingContext);
+            options.maximumVolume = maxAudioVolume(f.m_configService.config().audio) * 100.0F;
             return createWidget<VolumeWidget>(
-                context.contentScale, f.m_audio, f.m_easyEffects,
-                volumeWidgetDefinition().resolve(context.config, context.settingContext)
-            );
+                context.contentScale, f.m_audio, f.m_easyEffects, std::move(options));
           }},
       {"wallpaper", [](const WidgetFactory&, const BuiltinWidgetContext& context) {
             return createWidget<WallpaperWidget>(

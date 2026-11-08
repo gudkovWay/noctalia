@@ -60,9 +60,13 @@ public:
   void luaSetUpdateInterval(float ms);
   void setUpdateDeferralCallback(std::function<bool()> callback);
   [[nodiscard]] bool isVertical() const { return m_isVertical; }
-  [[nodiscard]] bool isBarSurface() const noexcept override { return m_barSurface && !m_isVertical; }
+  [[nodiscard]] bool isBarSurface() const noexcept override { return m_barSurface; }
   [[nodiscard]] float barSurfaceInset() const noexcept override { return isBarSurface() ? m_barSurfaceInset : 0.0F; }
   void setBarGeometry(float width, float height, float startWidth, float endWidth) override;
+  [[nodiscard]] bool hasCustomInputRegions() const noexcept override {
+    return m_tree.has_value() && m_tree->props.contains("inputRects");
+  }
+  [[nodiscard]] bool appendInputRegions(std::vector<InputRect>& regions) const override;
 
   // PluginIpcEndpoint
   [[nodiscard]] std::string_view ipcEntryId() const override { return m_entryId; }

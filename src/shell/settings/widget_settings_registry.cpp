@@ -714,6 +714,15 @@ namespace settings {
     );
     scrollRepeat.visibleWhen = WidgetSettingVisibility{"interactive", {"true"}};
     actions.visibleWhen = WidgetSettingVisibility{"interactive", {"true"}};
+    auto barX = optionalDoubleSpec("bar_x", 0.0, 32768.0);
+    auto barY = optionalDoubleSpec("bar_y", 0.0, 32768.0);
+    auto barWidth = optionalDoubleSpec("bar_width", 1.0, 32768.0);
+    auto barHeight = optionalDoubleSpec("bar_height", 1.0, 32768.0);
+    auto barFromRight = boolSpec("bar_from_right", false);
+    auto hoverPanel = baseSpec("hover_panel", WidgetControlKind::String, std::string{}, true);
+    auto hoverContext = baseSpec("hover_context", WidgetControlKind::String, std::string{}, true);
+    for (auto* spec : {&barX, &barY, &barWidth, &barHeight, &barFromRight, &hoverPanel, &hoverContext})
+      spec->visibleInInspector = false;
 
     return {
         std::move(enabled),           std::move(anchor),
@@ -725,7 +734,10 @@ namespace settings {
         std::move(capsuleBorder),     std::move(capsuleBorderWidth),
         std::move(capsuleForeground), std::move(capsulePadding),
         std::move(capsuleOpacity),    std::move(scrollRepeat),
-        std::move(actions),
+        std::move(actions),          std::move(barX),
+        std::move(barY),             std::move(barWidth),
+        std::move(barHeight),        std::move(hoverPanel),
+        std::move(hoverContext),     std::move(barFromRight),
     };
   }
 

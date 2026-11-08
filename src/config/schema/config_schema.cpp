@@ -1924,7 +1924,7 @@ namespace noctalia::config::schema {
     // drift apart.
     constexpr Range<std::int64_t> kBarThicknessRange{10, 300};
     constexpr Range<std::int64_t> kBarRadiusRange{0, 500};
-    constexpr Range<std::int64_t> kBarPanelOverlapRange{-2, 3};
+    constexpr Range<std::int64_t> kBarPanelOverlapRange{-2, 64};
     constexpr Range<float> kBarCapsuleThicknessRange{0.1F, 1.0F};
     constexpr Range<float> kBarOpacityRange{0.0F, 1.0F};
     constexpr Range<float> kBarBorderWidthRange{0.0F, 20.0F};

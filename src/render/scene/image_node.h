@@ -24,6 +24,7 @@ public:
   [[nodiscard]] float borderWidth() const noexcept { return m_borderWidth; }
   [[nodiscard]] ImageFitMode fitMode() const noexcept { return m_fitMode; }
   [[nodiscard]] const ImageScrim& scrim() const noexcept { return m_scrim; }
+  [[nodiscard]] const ImageHem& hem() const noexcept { return m_hem; }
   [[nodiscard]] bool monochromeTint() const noexcept { return m_monochromeTint; }
   [[nodiscard]] bool alphaMaskTint() const noexcept { return m_alphaMaskTint; }
   [[nodiscard]] int textureWidth() const noexcept { return m_textureWidth; }
@@ -77,6 +78,13 @@ public:
     markPaintDirty();
   }
 
+  void setHem(const ImageHem& hem) {
+    if (m_hem == hem)
+      return;
+    m_hem = hem;
+    markPaintDirty();
+  }
+
   void setBorder(const Color& color, float width) {
     if (m_borderColor == color && m_borderWidth == width) {
       return;
@@ -113,6 +121,7 @@ private:
   float m_borderWidth = 0.0F;
   ImageFitMode m_fitMode = ImageFitMode::Stretch;
   ImageScrim m_scrim{};
+  ImageHem m_hem{};
   int m_textureWidth = 0;
   int m_textureHeight = 0;
 };

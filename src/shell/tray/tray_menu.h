@@ -52,6 +52,7 @@ private:
     popup_chrome::Geometry chrome;
     InputDispatcher inputDispatcher;
     wl_surface* wlSurface = nullptr;
+    wl_surface* parentWlSurface = nullptr;
     bool pointerInside = false;
     ContextSubmenuDirection submenuDirection = ContextSubmenuDirection::Right;
     ScrollViewState scrollState;

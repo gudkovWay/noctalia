@@ -85,6 +85,13 @@ constexpr bool operator==(const ImageScrim& lhs, const ImageScrim& rhs) noexcept
   return lhs.enabled == rhs.enabled && lhs.direction == rhs.direction && lhs.stops == rhs.stops;
 }
 
+// Normalized vertical texture displacement; the sewn upper portion stays fixed.
+struct ImageHem {
+  std::array<float, 24> offsets{};
+  bool enabled = false;
+  bool operator==(const ImageHem&) const = default;
+};
+
 // Explicit structural surface mode. None is the plain fill/border rect every
 // existing caller gets. Stagecraft selects the structural relief frame drawn in
 // one rect pass (continuous bevel/recess band plus bounded asymmetric corner

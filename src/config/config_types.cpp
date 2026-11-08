@@ -597,6 +597,18 @@ CommonWidgetOptions resolveCommonWidgetOptions(
   options.labelFontFamily = widget->getString("font_family");
   options.scrollRepeat = widget->getString("scroll_repeat", "auto");
   options.enableScroll = widget->getBool("enable_scroll", true);
+  options.hoverPanel = widget->getString("hover_panel");
+  options.hoverContext = widget->getString("hover_context");
+  const double x = widget->getDouble("bar_x", -1.0);
+  const double y = widget->getDouble("bar_y", -1.0);
+  const double width = widget->getDouble("bar_width", 0.0);
+  const double height = widget->getDouble("bar_height", 0.0);
+  if (std::isfinite(x) && std::isfinite(y) && std::isfinite(width) && std::isfinite(height)
+      && x >= 0 && y >= 0 && width > 0 && height > 0) {
+    options.barRect = BarWidgetRect{static_cast<float>(x), static_cast<float>(y),
+                                   static_cast<float>(width), static_cast<float>(height),
+                                   widget->getBool("bar_from_right", false)};
+  }
   return options;
 }
 

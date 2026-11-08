@@ -16,6 +16,7 @@ namespace tray {
   struct ResolvedTrayOptions {
     TrayWidget::Options options;
     std::optional<float> drawerItemSize;
+    std::optional<ColorSpec> iconColor;
   };
 
   [[nodiscard]] ResolvedTrayOptions resolvedTrayOptions(

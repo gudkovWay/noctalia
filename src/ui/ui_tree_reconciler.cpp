@@ -482,7 +482,7 @@ namespace ui {
                                                              "visible", "name",   "size",     "color"};
       static const std::unordered_set<std::string> kImage = {"width",   "height",  "flexGrow", "opacity", "visible",
                                                              "path",    "radius",  "fit",      "border",  "borderWidth",
-                                                             "onClick", "onHover", "tooltip"};
+                                                             "onClick", "onHover", "tooltip", "hem"};
       static const std::unordered_set<std::string> kSeparator = {"width",   "height",  "flexGrow",
                                                                  "opacity", "visible", "thickness",
                                                                  "color",   "spacing", "orientation"};
@@ -1078,6 +1078,8 @@ namespace ui {
     for (const auto& [key, value] : desired.props) {
       (void)value;
       if (key != "x" && key != "y" && key != "clip" && !known.contains(key)) {
+        if (key == "inputRects")
+          continue;
         kLog.warn("ui tree: '{}' has no prop '{}', ignored", desired.type, key);
       }
     }
@@ -1468,6 +1470,9 @@ namespace ui {
       const float imageWidth = width != nullptr ? scaled(*width) : node->width();
       const float imageHeight = height != nullptr ? scaled(*height) : imageWidth;
       image->setSize(imageWidth, imageHeight);
+      static const std::vector<double> emptyHem;
+      const auto* hem = arrayProp(desired, "hem");
+      image->setHem(hem != nullptr ? *hem : emptyHem);
       if (auto* inputArea = inputAreaFromSlot(node)) {
         inputArea->setSize(imageWidth, imageHeight);
       }

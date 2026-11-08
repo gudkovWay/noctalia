@@ -134,6 +134,18 @@ void Image::setScrim(const ImageScrim& scrim) {
   }
 }
 
+void Image::setHem(const std::vector<double>& offsets) {
+  ImageHem hem;
+  if (offsets.size() == hem.offsets.size()
+      && std::ranges::all_of(offsets, [](double value) { return std::isfinite(value); })) {
+    for (std::size_t i = 0; i < offsets.size(); ++i) {
+      hem.offsets[i] = static_cast<float>(std::clamp(offsets[i], -0.1, 0.1));
+      hem.enabled = hem.enabled || hem.offsets[i] != 0.0F;
+    }
+  }
+  m_image->setHem(hem);
+}
+
 void Image::setBorder(const ColorSpec& color, float width) {
   m_border = color;
   m_borderWidth = width;
@@ -152,8 +164,9 @@ void Image::setTint(const Color& tint) {
   m_foregroundTint = std::nullopt;
 }
 
-void Image::setAppIconColorization(std::optional<ColorSpec> tint) {
+void Image::setAppIconColorization(std::optional<ColorSpec> tint, bool preserveInk) {
   m_appIconColorizeTint = tint;
+  m_preserveAppIconInk = preserveInk;
   if (tint.has_value()) {
     m_foregroundTint = std::nullopt;
   }
@@ -670,7 +683,7 @@ void Image::applyAppIconColorizationPrep(std::uint8_t* rgba, int width, int heig
     return;
   }
   const AppIconColorizationStyle style = resolveAppIconColorization(*m_appIconColorizeTint);
-  bakeAppIconForColorization(rgba, width, height, style.tint);
+  bakeAppIconForColorization(rgba, width, height, style.tint, m_preserveAppIconInk);
 }
 
 bool Image::commitColorizedRgba(Renderer& renderer, const std::uint8_t* rgba, int width, int height, bool mipmap) {

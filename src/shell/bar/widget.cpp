@@ -102,7 +102,7 @@ void Widget::syncOuterHitTestVisible() noexcept {
 
 void Widget::updateGestureAreaEnabled() noexcept {
   if (m_gestureArea != nullptr) {
-    m_gestureArea->setEnabled(!m_nonInteractive && !m_gestureBindings.empty());
+    m_gestureArea->setEnabled(!m_nonInteractive && (!m_gestureBindings.empty() || !m_hoverPanel.empty()));
   }
 }
 
@@ -192,6 +192,9 @@ void Widget::applyCommonOptions(
     std::string_view logContext
 ) {
   setAnchor(options.anchor);
+  m_barRect = options.barRect;
+  m_hoverPanel = options.hoverPanel;
+  m_hoverContext = options.hoverContext;
   setNonInteractive(!options.interactive);
   m_labelFontWeight =
       options.labelFontWeight.has_value() ? static_cast<FontWeight>(*options.labelFontWeight) : barFontWeight;

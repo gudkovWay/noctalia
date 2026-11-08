@@ -7,6 +7,7 @@
 #include "system/sysmon_threshold_profile.h"
 #include "ui/style.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -410,6 +411,18 @@ struct WidgetBarCapsuleSpec {
   bool operator==(const WidgetBarCapsuleSpec&) const = default;
 };
 
+struct BarWidgetRect {
+  float x = 0.0F;
+  float y = 0.0F;
+  float width = 0.0F;
+  float height = 0.0F;
+  bool fromRight = false;
+
+  [[nodiscard]] float left(float surfaceWidth) const noexcept {
+    return fromRight ? std::max(0.0F, surfaceWidth - x - width) : x;
+  }
+};
+
 struct CommonWidgetOptions {
   bool enabled = true;
   bool anchor = false;
@@ -423,6 +436,9 @@ struct CommonWidgetOptions {
   WidgetBarCapsuleSpec capsule;
   std::string scrollRepeat = "auto";
   bool enableScroll = true;
+  std::optional<BarWidgetRect> barRect;
+  std::string hoverPanel;
+  std::string hoverContext;
 };
 
 struct WidgetConfig {

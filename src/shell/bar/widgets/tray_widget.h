@@ -28,6 +28,8 @@ public:
     std::vector<std::string> pinnedItems;
     bool hidePassive = true;
     bool drawerMode = false;
+    bool pinnedOnly = false;
+    bool drawerList = false;
     // Internal presentation for the reserved Kumihimo bar; not a global tray setting.
     bool fanOpener = false;
     bool fanPanel = false;
@@ -41,6 +43,7 @@ public:
     // Read by TrayDrawerPanel, not by TrayWidget: they live here so the tray widget definition owns their defaults.
     double drawerItemSize = Style::baseGlyphSize;
     bool detachedPanel = false;
+    std::string drawerBackgroundImage;
   };
 
   TrayWidget(ConfigService& config, TrayService* tray, Options options);
@@ -50,7 +53,7 @@ public:
   void setCapsuleCross(float cross) noexcept { m_capsuleCross = cross; }
   void create() override;
   [[nodiscard]] bool wantsBarHoverHighlight() const noexcept override { return false; }
-  void setFanReveal(float progress);
+  void setDrawerReveal(float progress);
 
 private:
   struct HoverOverlayEntry {
@@ -82,6 +85,8 @@ private:
   void refreshFanPalette();
   [[nodiscard]] std::unique_ptr<InputArea> createFanArea(std::size_t slot);
   void changeFanPage(int direction);
+  void buildFoldScene(Renderer& renderer);
+  void changeFoldPage(int direction);
 
   ConfigService& m_config;
   TrayService* m_tray = nullptr;
@@ -99,7 +104,6 @@ private:
   std::vector<Image*> m_colorizedAppIcons;
   std::unordered_map<std::string, std::size_t> m_initialPixmaps;
   std::unordered_map<std::string, bool> m_preferPixmap;
-  float m_contentHeight = 0.0F;
   bool m_isVertical = false;
   bool m_rebuildPending = true;
   bool m_drawerMode = false;
@@ -121,7 +125,7 @@ private:
   float m_capsuleCross = 0.0F;
   bool m_fanOpener = false;
   bool m_fanPanel = false;
-  float m_fanProgress = 0.0F;
+  float m_revealProgress = 0.0F;
   float m_fanExtent = 0.0F;
   std::size_t m_fanPage = 0;
   std::size_t m_fanItemCount = 0;
@@ -133,4 +137,11 @@ private:
   Node* m_fanContent = nullptr;
   Image* m_fanOutline = nullptr;
   Node* m_fanPivot = nullptr;
+  bool m_foldPanel = false;
+  bool m_pinnedOnly = false;
+  bool m_drawerList = false;
+  std::size_t m_foldPage = 0;
+  std::size_t m_foldItemCount = 0;
+  Node* m_foldContent = nullptr;
+  std::vector<InputArea*> m_foldInputs;
 };

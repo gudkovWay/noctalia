@@ -4,10 +4,13 @@
 #include "shell/tray/tray_drawer_panel.h"
 #include "shell/tray/tray_fan_art.h"
 #include "shell/tray/tray_fan_geometry.h"
+#include "shell/tray/tray_fold_geometry.h"
 #include "shell/tray/tray_settings.h"
 #include "theme/builtin_palettes.h"
+#include "ui/app_icon_colorization.h"
 #include "util/base64.h"
 
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -22,6 +25,64 @@ int main() {
       std::println(stderr, "tray_fan: {}", why);
     }
   };
+  const Color crimson = rgba(196.0F / 255.0F, 91.0F / 255.0F, 106.0F / 255.0F);
+  std::array<std::uint8_t, 12> automaticInk{255, 255, 255, 255, 64, 64, 64, 255, 255, 255, 255, 0};
+  auto preservedInk = automaticInk;
+  bakeAppIconForColorization(automaticInk.data(), 3, 1, crimson);
+  bakeAppIconForColorization(preservedInk.data(), 3, 1, crimson, true);
+  check(preservedInk[0] > 150 && preservedInk[0] > automaticInk[0],
+        "Mina red tint inverts bright icon details into unreadable dark ink");
+  check(preservedInk[0] > preservedInk[4] && preservedInk[3] == 255 && preservedInk[11] == 0,
+        "Mina icon tint loses internal contrast or transparent pixels");
+  for (const float scale : {1.0F, 1.25F}) {
+    for (const std::size_t count : {0U, 1U, 2U, 7U, 8U, 9U, 17U}) {
+      const tray::FoldLayout first(count, 0, scale);
+      const tray::FoldLayout last(count, 100, scale);
+      check(last.page() + 1 == last.pages(), "fold overflow page does not clamp");
+      check(first.width() == tray::kFoldWidth * scale, "fold width changes with app inventory");
+      check(first.height() == last.height(), "paging moves the fold panel anchor");
+      std::size_t reached = 0;
+      for (std::size_t page = 0; page < first.pages(); ++page) {
+        const tray::FoldLayout layout(count, page, scale);
+        reached += layout.count();
+        for (std::size_t slot = 0; slot < layout.count(); ++slot) {
+          const auto p = layout.appPosition(slot);
+          const float half = tray::kFoldTargetSize * scale * 0.5F;
+          check(p.x - half >= 0 && p.x + half <= layout.width()
+                    && p.y - half >= 0 && p.y + half <= layout.height(),
+                "fold application hit target escapes its surface");
+          for (const float dx : {-25.0F * scale, 0.0F, 25.0F * scale})
+            for (const float dy : {-25.0F * scale, 0.0F, 25.0F * scale})
+              check(layout.itemAt(p.x + dx, p.y + dy) == slot,
+                    "fold logo target selects a neighbor");
+        }
+        check(!layout.itemAt(0, 0) && !layout.itemAt(layout.width() - 1, layout.height() - 1),
+              "transparent fold corner activates an application");
+      }
+      check(reached == count, "fold pagination loses applications");
+    }
+  }
+  for (const std::size_t count : {0U, 1U, 7U, 8U, 17U}) {
+    const tray::FoldLayout first(count, 0, 1.0F, true);
+    const tray::FoldLayout last(count, 100, 1.0F, true);
+    check(first.width() == last.width() && first.height() == last.height(),
+          "M10 tray resizes when inventory or page changes");
+    std::size_t reached = 0;
+    for (std::size_t page = 0; page < first.pages(); ++page) {
+      const tray::FoldLayout layout(count, page, 1.0F, true);
+      reached += layout.count();
+      for (std::size_t slot = 0; slot < layout.count(); ++slot) {
+        const auto point = layout.appPosition(slot);
+        check(layout.itemAt(point.x, point.y) == slot && layout.itemAt(point.x + 160, point.y) == slot,
+              "M10 tray row label does not activate its application");
+        if (slot + 1 < layout.count())
+          check(layout.appPosition(slot + 1).y - point.y >= 52.0F, "M10 tray row targets overlap");
+      }
+    }
+    check(reached == count, "M10 tray pagination loses applications");
+    check(!first.itemAt(0, 0) && !first.itemAt(first.width() - 1, first.height() - 1),
+          "transparent M10 wing corner activates an application");
+  }
   // Overflow must remain reachable; stale pages after a removal must clamp.
   tray::FanLayout eight(8, 0, tray::kFanExtent);
   check(
@@ -200,6 +261,13 @@ hidden = ['canonical-app']
 [widget.q_skin_runtime_tray]
 type = 'tray'
 hidden = ['instance-app']
+[bar.mina-left]
+position = 'left'
+center = ['mina_tray']
+[widget.mina_tray]
+type = 'tray'
+drawer_background_image = 'fold.png'
+icon_color = '#C45B6A'
 )";
   ::setenv("NOCTALIA_CONFIG_HOME", (root / "config").c_str(), 1);
   ::setenv("NOCTALIA_STATE_HOME", (root / "state").c_str(), 1);
@@ -207,6 +275,9 @@ hidden = ['instance-app']
     ConfigService config;
     const auto own = tray::resolvedTrayOptions(config, {}, "q_skin_runtime_tray");
     const auto canonical = tray::resolvedTrayOptions(config);
+    const auto mina = tray::resolvedTrayOptions(config, {}, "mina_tray");
+    check(mina.iconColor == colorSpecFromConfigString("#C45B6A"), "material drawer lost its configured icon color");
+    check(!canonical.iconColor && !own.iconColor, "Mina icon color leaked into another tray instance");
     check(
         own.options.hiddenItems == std::vector<std::string>{"instance-app"}
             && canonical.options.hiddenItems == std::vector<std::string>{"canonical-app"},
@@ -223,6 +294,12 @@ hidden = ['instance-app']
     panel.onClose();
     panel.setPendingOpenContext("tray");
     check(!panel.fanPresentation() && panel.hasDecoration(), "fan styling leaked into canonical tray");
+    panel.setPendingOpenContext("mina_tray");
+    check(!panel.fanPresentation() && !panel.hasDecoration() && panel.panelPlacement() == PanelPlacement::Attached,
+          "material drawer gained a standard rectangular decoration or fan placement");
+    check(panel.preferredWidth() == tray::FoldLayout(0, 0).width()
+              && panel.preferredHeight() == tray::FoldLayout(0, 0).height(),
+          "material drawer geometry disagrees with its native hit targets");
   }
   std::filesystem::remove_all(root);
   return failures == 0 ? 0 : 1;

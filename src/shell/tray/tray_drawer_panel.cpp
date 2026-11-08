@@ -5,9 +5,14 @@
 #include "shell/bar/widgets/tray_widget.h"
 #include "shell/panel/panel_manager.h"
 #include "shell/tray/tray_fan_geometry.h"
+#include "shell/tray/tray_fold_geometry.h"
 #include "shell/tray/tray_identifier.h"
 #include "shell/tray/tray_settings.h"
 #include "util/string_utils.h"
+#include "ui/builders.h"
+#include "ui/controls/box.h"
+#include "ui/controls/image.h"
+#include "util/file_utils.h"
 
 #include <algorithm>
 #include <vector>
@@ -25,6 +30,43 @@ std::string_view TrayDrawerPanel::sourceWidgetName() const {
       return tray::kCanonicalTrayWidgetName;
   }
   return name;
+}
+
+const BarConfig* TrayDrawerPanel::sourceBar() const {
+  if (m_config == nullptr)
+    return nullptr;
+  const auto name = sourceWidgetName();
+  for (const auto& bar : m_config->config().bars) {
+    if (std::ranges::find(bar.startWidgets, name) != bar.startWidgets.end()
+        || std::ranges::find(bar.centerWidgets, name) != bar.centerWidgets.end()
+        || std::ranges::find(bar.endWidgets, name) != bar.endWidgets.end())
+      return &bar;
+  }
+  return m_config->config().bars.empty() ? nullptr : &m_config->config().bars.front();
+}
+
+std::string_view TrayDrawerPanel::materialPath() const noexcept {
+  if (m_config == nullptr)
+    return {};
+  const auto source = sourceWidgetName();
+  for (const auto& [name, widget] : m_config->config().widgets) {
+    if (name != source)
+      continue;
+    for (const auto& [key, value] : widget.settings) {
+      if (key == "drawer_background_image") {
+        if (const auto* path = std::get_if<std::string>(&value))
+          return *path;
+        return {};
+      }
+    }
+    return {};
+  }
+  return {};
+}
+
+bool TrayDrawerPanel::listPresentation() const {
+  return m_config != nullptr
+      && tray::resolvedTrayOptions(*m_config, {}, sourceWidgetName()).options.drawerList;
 }
 
 bool TrayDrawerPanel::fanPresentation() const {
@@ -48,10 +90,10 @@ void TrayDrawerPanel::onOpen(std::string_view context) {
 
 bool TrayDrawerPanel::isContextActive(std::string_view context) const { return context == sourceWidgetName(); }
 
-void TrayDrawerPanel::setFanReveal(float progress) {
-  m_fanProgress = progress;
+void TrayDrawerPanel::setDrawerReveal(float progress) {
+  m_revealProgress = progress;
   if (m_drawerWidget)
-    m_drawerWidget->setFanReveal(progress);
+    m_drawerWidget->setDrawerReveal(progress);
 }
 
 PanelPlacement TrayDrawerPanel::panelPlacement() const noexcept {
@@ -76,13 +118,13 @@ float TrayDrawerPanel::resolvedItemGap() const {
   }
 
   const auto resolved = tray::resolvedTrayOptions(*m_config, {}, sourceWidgetName());
-  if (!m_config->config().bars.empty()) {
-    gap = static_cast<float>(m_config->config().bars.front().widgetSpacing);
-  }
-  if (!resolved.options.matchAdjacentSpacing || m_config->config().bars.empty()) {
+  const auto* bar = sourceBar();
+  if (bar != nullptr)
+    gap = static_cast<float>(bar->widgetSpacing);
+  if (!resolved.options.matchAdjacentSpacing || bar == nullptr) {
     return gap;
   }
-  const auto capsule = tray::resolvedTrayCapsuleSpec(*m_config, m_config->config().bars.front(), sourceWidgetName());
+  const auto capsule = tray::resolvedTrayCapsuleSpec(*m_config, *bar, sourceWidgetName());
   const float padding = capsule.enabled ? capsule.padding * contentScale() : 0.0F;
   return gap + 2.0F * padding;
 }
@@ -90,6 +132,8 @@ float TrayDrawerPanel::resolvedItemGap() const {
 float TrayDrawerPanel::preferredWidth() const {
   if (fanPresentation())
     return scaled(tray::kFanExtent);
+  if (!materialPath().empty())
+    return tray::FoldLayout(visibleItemCount(), 0, contentScale(), listPresentation()).width();
   const float itemSize = scaled(currentDrawerItemSize().value_or(Style::baseGlyphSize));
   const float gap = resolvedItemGap();
   const std::size_t drawerColumns = currentDrawerColumns();
@@ -102,6 +146,8 @@ float TrayDrawerPanel::preferredWidth() const {
 float TrayDrawerPanel::preferredHeight() const {
   if (fanPresentation())
     return scaled(tray::kFanExtent);
+  if (!materialPath().empty())
+    return tray::FoldLayout(visibleItemCount(), 0, contentScale(), listPresentation()).height();
   const float itemSize = scaled(currentDrawerItemSize().value_or(Style::baseGlyphSize));
   const float gap = resolvedItemGap();
   const std::size_t count = std::max<std::size_t>(1, visibleItemCount());
@@ -119,10 +165,9 @@ void TrayDrawerPanel::create() {
 
   float widgetSpacing = Style::spaceXs;
   std::string barPosition = "top";
-  if (!m_config->config().bars.empty()) {
-    const auto& barConfig = m_config->config().bars.front();
-    widgetSpacing = static_cast<float>(barConfig.widgetSpacing);
-    barPosition = barConfig.position;
+  if (const auto* barConfig = sourceBar()) {
+    widgetSpacing = static_cast<float>(barConfig->widgetSpacing);
+    barPosition = barConfig->position;
   }
 
   auto resolved = tray::resolvedTrayOptions(
@@ -140,10 +185,10 @@ void TrayDrawerPanel::create() {
   options.customItemSize = resolved.drawerItemSize;
   options.fanPanel = fanPresentation();
   m_drawerWidget = std::make_unique<TrayWidget>(*m_config, m_tray, std::move(options));
+  m_drawerWidget->setWidgetIconColor(resolved.iconColor);
   m_drawerWidget->setContentScale(contentScale());
-  if (!m_config->config().bars.empty()) {
-    const auto& barConfig = m_config->config().bars.front();
-    m_drawerWidget->setBarCapsuleSpec(tray::resolvedTrayCapsuleSpec(*m_config, barConfig, sourceWidgetName()));
+  if (const auto* barConfig = sourceBar()) {
+    m_drawerWidget->setBarCapsuleSpec(tray::resolvedTrayCapsuleSpec(*m_config, *barConfig, sourceWidgetName()));
   }
   m_drawerWidget->setAnimationManager(m_animations);
   m_drawerWidget->setUpdateCallback([]() { PanelManager::instance().requestUpdateOnly(); });
@@ -164,8 +209,15 @@ void TrayDrawerPanel::create() {
     }
   });
   m_drawerWidget->create();
-  setRoot(m_drawerWidget->releaseRoot());
-  m_drawerWidget->setFanReveal(m_fanProgress);
+  if (materialPath().empty()) {
+    setRoot(m_drawerWidget->releaseRoot());
+  } else {
+    auto root = ui::box({.fill = fixedColorSpec(rgba(0, 0, 0, 0))});
+    root->addChild(ui::image({.out = &m_material, .fit = ImageFit::Stretch}));
+    root->addChild(m_drawerWidget->releaseRoot());
+    setRoot(std::move(root));
+  }
+  m_drawerWidget->setDrawerReveal(m_revealProgress);
 }
 
 void TrayDrawerPanel::onClose() {
@@ -173,7 +225,9 @@ void TrayDrawerPanel::onClose() {
   clearReleasedRoot();
   m_sourceWidgetName.clear();
   setPendingOpenContext({});
-  m_fanProgress = 0;
+  m_revealProgress = 0;
+  m_material = nullptr;
+  m_loadedMaterial.clear();
   m_fanPresentation.reset();
 }
 
@@ -188,7 +242,20 @@ void TrayDrawerPanel::doLayout(Renderer& renderer, float width, float height) {
   if (m_drawerWidget == nullptr || m_drawerWidget->root() == nullptr) {
     return;
   }
+  const bool material = m_material != nullptr;
   m_drawerWidget->layout(renderer, width, height);
+  if (material) {
+    root()->setSize(width, height);
+    m_material->setSize(width, height);
+    const auto path = materialPath();
+    if (path != m_loadedMaterial) {
+      m_loadedMaterial = path;
+      m_material->setSourceFile(renderer, FileUtils::expandUserPath(m_loadedMaterial).string(),
+                               static_cast<int>(std::max(width, height) * 2), true);
+    }
+    auto* content = m_drawerWidget->root();
+    content->setPosition(0, 0);
+  }
 }
 
 void TrayDrawerPanel::doUpdate(Renderer& renderer) {

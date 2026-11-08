@@ -753,6 +753,8 @@ void TrayMenu::ensureSurface() {
 
   popup_chrome::setContentInputRegion(*inst->surface, inst->chrome);
   inst->wlSurface = inst->surface->wlSurface();
+  inst->parentWlSurface = parentWlSurface;
+  PanelManager::instance().beginAttachedPopup(parentWlSurface);
   m_instance = std::move(inst);
 
   // Hyprland: without an active focus grab covering the popup, the compositor
@@ -818,12 +820,15 @@ void TrayMenu::resizeMainSurfaceToEntries() {
 }
 
 void TrayMenu::destroySurface() {
+  wl_surface* parent = nullptr;
   if (m_instance != nullptr) {
+    parent = m_instance->parentWlSurface;
     m_instance->inputDispatcher.setSceneRoot(nullptr);
   }
   m_instance.reset();
   m_focusGrab.reset();
   restoreBarKeyboardInteractivity();
+  PanelManager::instance().endAttachedPopup(parent);
 }
 
 void TrayMenu::restoreBarKeyboardInteractivity() {

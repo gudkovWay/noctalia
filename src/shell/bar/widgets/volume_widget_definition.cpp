@@ -49,6 +49,9 @@ const noctalia::bar::WidgetDefinition<VolumeWidget::Options>& volumeWidgetDefini
               field<&Options::showLabel>({
                   .key = "show_label",
               }),
+              field<&Options::slider>({.key = "slider"}),
+              field<&Options::sliderShowThumb>({.key = "slider_show_thumb", .presentation = std::nullopt}),
+              field<&Options::sliderFillImage>({.key = "slider_fill_image", .presentation = std::nullopt}),
               field<&Options::muteColor>({
                   .key = "mute_color",
               }),

@@ -12,6 +12,7 @@
 #include "ui/builders.h"
 #include "ui/palette.h"
 #include "ui/style.h"
+#include "wayland/surface.h"
 
 #include <algorithm>
 #include <atomic>
@@ -343,6 +344,36 @@ void PluginWidget::setBarGeometry(float width, float height, float startWidth, f
        static_cast<double>(endWidth)},
       makeScriptSnapshot(), {.coalesce = true}
   );
+}
+
+bool PluginWidget::appendInputRegions(std::vector<InputRect>& regions) const {
+  if (!m_tree || root() == nullptr || !root()->visible())
+    return false;
+  const auto found = m_tree->props.find("inputRects");
+  if (found == m_tree->props.end())
+    return false;
+  const auto* values = std::get_if<std::vector<double>>(&found->second);
+  if (values == nullptr || values->size() % 4 != 0 || values->size() > 1024)
+    return true;
+  float x = 0.0F, y = 0.0F;
+  Node::absolutePosition(root(), x, y);
+  for (std::size_t i = 0; i < values->size(); i += 4) {
+    const double left = (*values)[i], top = (*values)[i + 1];
+    const double width = (*values)[i + 2], height = (*values)[i + 3];
+    if (!std::isfinite(left) || !std::isfinite(top) || !std::isfinite(width) || !std::isfinite(height)
+        || width <= 0 || height <= 0)
+      continue;
+    const float scale = contentScale();
+    const float x0 = std::clamp(x + static_cast<float>(left) * scale, x, x + root()->width());
+    const float y0 = std::clamp(y + static_cast<float>(top) * scale, y, y + root()->height());
+    const float x1 = std::clamp(x + static_cast<float>(left + width) * scale, x0, x + root()->width());
+    const float y1 = std::clamp(y + static_cast<float>(top + height) * scale, y0, y + root()->height());
+    if (x1 > x0 && y1 > y0)
+      regions.push_back({static_cast<int>(std::floor(x0)), static_cast<int>(std::floor(y0)),
+                        static_cast<int>(std::ceil(x1) - std::floor(x0)),
+                        static_cast<int>(std::ceil(y1) - std::floor(y0))});
+  }
+  return true;
 }
 
 void PluginWidget::doLayout(Renderer& renderer, float containerWidth, float containerHeight) {

@@ -13,6 +13,7 @@
 #include "shell/panel/panel_manager.h"
 #include "shell/tray/tray_fan_art.h"
 #include "shell/tray/tray_fan_geometry.h"
+#include "shell/tray/tray_fold_geometry.h"
 #include "shell/tray/tray_identifier.h"
 #include "system/desktop_entry.h"
 #include "ui/app_icon_colorization.h"
@@ -173,7 +174,9 @@ TrayWidget::TrayWidget(ConfigService& config, TrayService* tray, Options options
       m_barPosition(std::move(options.barPosition)), m_panelGridMode(options.panelGridMode),
       m_panelGridColumns(std::clamp<std::size_t>(options.panelGridColumns, 1U, 5U)),
       m_inlineEntryGap(std::max(0.0F, options.inlineEntryGap)), m_matchAdjacentSpacing(options.matchAdjacentSpacing),
-      m_customItemSize(options.customItemSize), m_fanOpener(options.fanOpener), m_fanPanel(options.fanPanel) {
+      m_customItemSize(options.customItemSize), m_fanOpener(options.fanOpener), m_fanPanel(options.fanPanel),
+      m_foldPanel(options.panelGridMode && !options.drawerBackgroundImage.empty() && !options.fanPanel),
+      m_pinnedOnly(options.pinnedOnly), m_drawerList(options.drawerList) {
   auto normalizeTokens = [](std::vector<std::string>& tokens) {
     std::vector<std::string> normalized;
     normalized.reserve(tokens.size());
@@ -246,6 +249,8 @@ float TrayWidget::resolvedInlineEntryGap() const {
 std::optional<ColorSpec> TrayWidget::currentAppIconColorizeTint() const {
   if (m_fanPanel)
     return colorSpecFromRole(ColorRole::OnSurface);
+  if (m_foldPanel && m_drawerList)
+    return widgetIconColorOr(colorSpecFromRole(ColorRole::OnSurface));
   return effectiveShellAppIconColorizationTint(m_config.config().shell);
 }
 
@@ -256,7 +261,7 @@ void TrayWidget::refreshAppIconColorization(Renderer& renderer) {
   const auto tint = currentAppIconColorizeTint();
   for (Image* image : m_colorizedAppIcons) {
     if (image != nullptr) {
-      image->setAppIconColorization(tint);
+      image->setAppIconColorization(tint, m_foldPanel && m_drawerList);
     }
   }
 }
@@ -288,6 +293,21 @@ void TrayWidget::doLayout(Renderer& renderer, float containerWidth, float contai
   if (m_container == nullptr) {
     return;
   }
+  if (m_foldPanel) {
+    syncState(renderer);
+    if (m_rebuildPending) {
+      rebuild(renderer);
+      m_rebuildPending = false;
+    }
+    if (m_appIconColorizeDirty) {
+      refreshAppIconColorization(renderer);
+      m_appIconColorizeDirty = false;
+    }
+    const tray::FoldLayout layout(m_foldItemCount, m_foldPage, m_contentScale, m_drawerList);
+    m_container->setSize(layout.width(), layout.height());
+    setDrawerReveal(m_revealProgress);
+    return;
+  }
   if (m_fanPanel) {
     const float extent = std::max(1.0F, std::min(containerWidth, containerHeight));
     if (std::abs(m_fanExtent - extent) > 0.5F) {
@@ -307,7 +327,9 @@ void TrayWidget::doLayout(Renderer& renderer, float containerWidth, float contai
     return;
   }
   if (m_drawerMode && m_drawerChevron != nullptr && m_drawerTrigger != nullptr) {
-    const bool panelOpen = PanelManager::instance().isOpenPanel("tray-drawer");
+    const auto& panels = PanelManager::instance();
+    const bool panelOpen = panels.isOpenPanel("tray-drawer")
+        && panels.attachedPanelOutput() == actionContext().output && panels.isActivePanelContext(configName());
     const std::string glyphName = drawerChevronGlyph(panelOpen);
     if (m_drawerChevronGlyph != glyphName) {
       m_drawerChevronGlyph = glyphName;
@@ -338,10 +360,6 @@ void TrayWidget::doLayout(Renderer& renderer, float containerWidth, float contai
     m_container->setDirection(m_isVertical ? FlexDirection::Vertical : FlexDirection::Horizontal);
   }
   syncState(renderer);
-  if (containerHeight > 0.0F && std::abs(containerHeight - m_contentHeight) > 0.5F) {
-    m_contentHeight = containerHeight;
-    m_rebuildPending = true;
-  }
   if (m_rebuildPending) {
     rebuild(renderer);
     m_rebuildPending = false;
@@ -481,6 +499,8 @@ void TrayWidget::rebuild(Renderer& renderer) {
   auto retainedFanTexture = m_fanLeafTexture != nullptr ? m_container->removeChild(m_fanLeafTexture) : nullptr;
   auto retainedFanRibs = m_fanRibTexture != nullptr ? m_container->removeChild(m_fanRibTexture) : nullptr;
 
+  m_foldInputs.clear();
+  m_foldContent = nullptr;
   while (!m_container->children().empty()) {
     m_container->removeChild(m_container->children().back().get());
   }
@@ -499,6 +519,8 @@ void TrayWidget::rebuild(Renderer& renderer) {
     if (m_fanOpener)
       return;
   }
+  if (m_foldPanel)
+    buildFoldScene(renderer);
 
   auto attachHover = [this](InputArea& area, float size) {
     if (!barCapsuleSpec().hoverHighlight) {
@@ -613,7 +635,9 @@ void TrayWidget::rebuild(Renderer& renderer) {
           requestPanelToggle("tray-drawer", configName(), anchorX, anchorY);
         }
       });
-      const bool panelOpen = PanelManager::instance().isOpenPanel("tray-drawer");
+      const auto& panels = PanelManager::instance();
+      const bool panelOpen = panels.isOpenPanel("tray-drawer")
+          && panels.attachedPanelOutput() == actionContext().output && panels.isActivePanelContext(configName());
       m_drawerChevronGlyph = drawerChevronGlyph(panelOpen);
       auto glyph = ui::glyph({
           .glyph = m_drawerChevronGlyph,
@@ -636,11 +660,14 @@ void TrayWidget::rebuild(Renderer& renderer) {
   const tray::FanLayout fanLayout(
       m_fanItemCount, m_fanPage, m_fanExtent > 0 ? m_fanExtent : tray::kFanExtent * m_contentScale
   );
+  const tray::FoldLayout foldLayout(m_foldItemCount, m_foldPage, m_contentScale, m_drawerList);
   std::size_t visibleIndex = 0;
   for (const auto& item : m_items) {
     if ((m_hidePassive && tray::isPassiveStatus(item)) || isHiddenItem(item)) {
       continue;
     }
+    if (m_pinnedOnly && !isPinnedItem(item))
+      continue;
     if (m_drawerMode && !isPinnedItem(item)) {
       continue;
     }
@@ -654,10 +681,18 @@ void TrayWidget::rebuild(Renderer& renderer) {
         continue;
       fanSlot = index - fanLayout.first();
     }
+    if (m_foldPanel) {
+      const auto index = visibleIndex++;
+      if (index < foldLayout.first() || index >= foldLayout.first() + foldLayout.count())
+        continue;
+      fanSlot = index - foldLayout.first();
+    }
     const std::string iconPath = resolveIconPath(item);
     const float itemSize = m_fanPanel ? tray::kFanIconSize * fanLayout.scale()
-                                      : m_customItemSize.value_or(Style::baseGlyphSize) * m_contentScale;
-    const float iconSize = itemSize;
+        : m_foldPanel ? tray::kFoldTargetSize * m_contentScale
+                      : m_customItemSize.value_or(Style::baseGlyphSize) * m_contentScale;
+    const float iconSize = m_foldPanel
+        ? std::min(40.0F, m_customItemSize.value_or(tray::kFoldIconSize)) * m_contentScale : itemSize;
     const int iconRequestSize = std::max(32, static_cast<int>(std::round(iconSize * 2.0F)));
 
     std::unique_ptr<Node> iconNode;
@@ -673,7 +708,7 @@ void TrayWidget::rebuild(Renderer& renderer) {
       const bool symbolicPath = isSymbolicIconPath(iconPath);
       const auto appIconTint = currentAppIconColorizeTint();
       if (!symbolicPath && appIconTint.has_value()) {
-        image->setAppIconColorization(appIconTint);
+        image->setAppIconColorization(appIconTint, m_foldPanel && m_drawerList);
       }
       bool loadedFromFile = false;
       const Color symbolicColor = m_fanPanel
@@ -725,7 +760,7 @@ void TrayWidget::rebuild(Renderer& renderer) {
         });
         const auto pixmapTint = currentAppIconColorizeTint();
         if (pixmapTint.has_value()) {
-          image->setAppIconColorization(pixmapTint);
+          image->setAppIconColorization(pixmapTint, m_foldPanel && m_drawerList);
         }
         if (image->setSourceRaw(
                 renderer, pixmap.data(), pixmap.size(), pixmapW, pixmapH, 0, PixmapFormat::ARGB, true
@@ -840,7 +875,7 @@ void TrayWidget::rebuild(Renderer& renderer) {
     area->setAcceptedButtons(InputArea::buttonMask({BTN_LEFT, BTN_RIGHT}));
     InputArea* areaPtr = area.get();
     area->setOnClick([this, itemId, areaPtr](const InputArea::PointerData& data) {
-      if (m_tray == nullptr || (m_fanPanel && !tray::fanActionsEnabled(m_fanProgress))) {
+      if (m_tray == nullptr || ((m_fanPanel || m_foldPanel) && !tray::fanActionsEnabled(m_revealProgress))) {
         return;
       }
       const auto [x, y] = trayPointerCoords(*areaPtr, data);
@@ -869,6 +904,44 @@ void TrayWidget::rebuild(Renderer& renderer) {
       m_fanContent->insertChildAt(fanSlot, std::move(area));
       continue;
     }
+    if (m_foldPanel) {
+      const auto point = foldLayout.appPosition(fanSlot);
+      area->setParticipatesInLayout(false);
+      area->setPosition(point.x - itemSize * 0.5F, point.y - itemSize * 0.5F);
+      const float rowWidth = m_drawerList ? 244.0F * m_contentScale : itemSize;
+      area->setSize(rowWidth, itemSize);
+      Box* highlight = nullptr;
+      area->insertChildAt(0, ui::box({.out = &highlight, .fill = fixedColorSpec(rgba(0.32F, 0.16F, 0.22F, 0)),
+                                    .radius = 5.0F * m_contentScale, .width = rowWidth, .height = itemSize}));
+      highlight->setHitTestVisible(false);
+      Node* logo = area->children().back().get();
+      const float logoX = logo->x();
+      const float logoY = logo->y();
+      area->setOnEnter([this, highlight, logo, logoX, logoY](const InputArea::PointerData&) {
+        highlight->setFill(fixedColorSpec(rgba(0.32F, 0.16F, 0.22F, 0.58F)));
+        logo->setPosition(logoX, logoY - 2.0F * m_contentScale);
+        requestRedraw();
+      });
+      area->setOnLeave([this, highlight, logo, logoX, logoY]() {
+        highlight->setFill(fixedColorSpec(rgba(0.32F, 0.16F, 0.22F, 0)));
+        logo->setPosition(logoX, logoY);
+        requestRedraw();
+      });
+      if (m_drawerList) {
+        const auto& title = !item.itemName.empty() ? item.itemName : !item.title.empty() ? item.title : item.id;
+        auto label = ui::label({.text = title, .fontSize = 14.0F * m_contentScale,
+                                .color = fixedColorSpec(rgba(0.90F, 0.85F, 0.81F)),
+                                .width = 176.0F * m_contentScale});
+        label->measure(renderer);
+        label->setPosition(58.0F * m_contentScale,
+                           std::round((itemSize - label->height()) * 0.5F));
+        label->setHitTestVisible(false);
+        area->addChild(std::move(label));
+      }
+      m_foldInputs.push_back(area.get());
+      m_foldContent->addChild(std::move(area));
+      continue;
+    }
 
     attachHover(*area, itemSize);
 
@@ -892,6 +965,73 @@ void TrayWidget::rebuild(Renderer& renderer) {
     layoutFanScene(fanLayout.scale() * tray::kFanExtent);
 
   m_container->setVisible(!m_container->children().empty());
+}
+
+void TrayWidget::buildFoldScene(Renderer& renderer) {
+  m_foldItemCount = static_cast<std::size_t>(std::ranges::count_if(m_items, [this](const TrayItemInfo& item) {
+    return !(m_hidePassive && tray::isPassiveStatus(item)) && !isHiddenItem(item) && !isPinnedItem(item);
+  }));
+  const tray::FoldLayout layout(m_foldItemCount, m_foldPage, m_contentScale, m_drawerList);
+  m_foldPage = layout.page();
+  auto content = ui::inputArea({});
+  content->setParticipatesInLayout(false);
+  content->setSize(layout.width(), layout.height());
+  content->setAcceptedButtons(0);
+  content->setHitTestSelf(false);
+  content->setOnAxis([this](const InputArea::PointerData& data) {
+    if (data.scrollSteps() != 0)
+      changeFoldPage(data.scrollSteps() < 0 ? -1 : 1);
+  });
+  m_foldContent = m_container->addChild(std::move(content));
+  if (m_foldItemCount == 0) {
+    auto label = ui::label({.text = "No tray applications", .fontSize = 12.0F * m_contentScale,
+                            .color = colorSpecFromRole(ColorRole::OnSurface), .width = 184.0F * m_contentScale,
+                            .textAlign = TextAlign::Center});
+    label->measure(renderer);
+    label->setPosition(42.0F * m_contentScale, (m_drawerList ? 150.0F : 80.0F) * m_contentScale);
+    m_foldContent->addChild(std::move(label));
+  }
+  if (layout.pages() > 1) {
+    for (int direction : {-1, 1}) {
+      auto page = ui::inputArea({});
+      page->setSize(32.0F * m_contentScale, 32.0F * m_contentScale);
+      page->setPosition((direction < 0 ? 54.0F : 174.0F) * m_contentScale,
+                        m_drawerList ? 100.0F * m_contentScale : layout.height() - 36.0F * m_contentScale);
+      page->setTooltip(direction < 0 ? "Previous applications" : "Next applications");
+      page->setAcceptedButtons(InputArea::buttonMask({BTN_LEFT}));
+      page->setOnClick([this, direction](const InputArea::PointerData&) { changeFoldPage(direction); });
+      auto glyph = ui::glyph({.glyph = direction < 0 ? "chevron-left" : "chevron-right",
+                              .glyphSize = 16.0F * m_contentScale,
+                              .color = colorSpecFromRole(ColorRole::OnSurface)});
+      glyph->measure(renderer);
+      glyph->setPosition(8.0F * m_contentScale, 8.0F * m_contentScale);
+      page->addChild(std::move(glyph));
+      m_foldInputs.push_back(page.get());
+      m_foldContent->addChild(std::move(page));
+    }
+    auto counter = ui::label({.text = std::to_string(layout.page() + 1) + " / " + std::to_string(layout.pages()),
+                              .fontSize = 11.0F * m_contentScale,
+                              .color = colorSpecFromRole(ColorRole::OnSurface), .width = 48.0F * m_contentScale,
+                              .textAlign = TextAlign::Center});
+    counter->measure(renderer);
+    counter->setHitTestVisible(false);
+    counter->setPosition(112.0F * m_contentScale,
+                         m_drawerList ? 108.0F * m_contentScale : layout.height() - 28.0F * m_contentScale);
+    m_foldContent->addChild(std::move(counter));
+  }
+}
+
+void TrayWidget::changeFoldPage(int direction) {
+  if (!tray::fanActionsEnabled(m_revealProgress))
+    return;
+  const tray::FoldLayout layout(m_foldItemCount, m_foldPage, m_contentScale, m_drawerList);
+  const auto next = direction < 0 ? (layout.page() + layout.pages() - 1) % layout.pages()
+                                 : (layout.page() + 1) % layout.pages();
+  if (next == m_foldPage)
+    return;
+  m_foldPage = next;
+  m_rebuildPending = true;
+  requestUpdate();
 }
 
 std::string TrayWidget::drawerChevronGlyph(bool panelOpen) const {
