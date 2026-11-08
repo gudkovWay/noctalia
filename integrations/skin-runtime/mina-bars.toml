@@ -1,0 +1,240 @@
+[bar]
+order = ["mina-left", "mina-music", "mina-workspaces", "default", "skin-runtime-status"]
+
+[bar.default]
+enabled = false
+[bar.skin-runtime-status]
+enabled = false
+[bar.mina-workspaces]
+enabled = false
+
+[bar.mina-left]
+enabled = true
+background_opacity = 0.0
+compositor_blur = false
+border_width = 0.0
+radius = 0
+radius_top_left = 0
+radius_top_right = 0
+radius_bottom_left = 0
+radius_bottom_right = 0
+concave_edge_corners = false
+margin_ends = 0
+margin_edge = 0
+padding = 0
+widget_spacing = 0
+shadow = false
+auto_hide = false
+reserve_space = true
+layer = "top"
+scale = 1.0
+font_scale = 1.0
+font_family = "Maple Mono"
+font_weight = 400
+capsule = false
+hover_highlight = false
+color = "#E9DCCB"
+position = "left"
+thickness = 104
+panel_overlap = 30
+capsule_thickness = 0.42
+width_mode = "content"
+start = []
+center = ["mina_extent_start", "mina_extent_end", "q/skin-runtime:mina-portrait", "mina_library", "q/skin-runtime:mina-ai", "q/skin-runtime:mina-studio", "q/skin-runtime:mina-system"]
+end = ["q/skin-runtime:mina-sidebar"]
+
+[bar.mina-music]
+enabled = true
+background_opacity = 0.0
+compositor_blur = false
+border_width = 0.0
+radius = 0
+radius_top_left = 0
+radius_top_right = 0
+radius_bottom_left = 0
+radius_bottom_right = 0
+concave_edge_corners = false
+margin_ends = 0
+margin_edge = 0
+padding = 0
+widget_spacing = 0
+shadow = false
+auto_hide = false
+reserve_space = true
+layer = "top"
+scale = 1.0
+font_scale = 1.0
+font_family = "Maple Mono"
+font_weight = 400
+capsule = false
+hover_highlight = false
+color = "#E9DCCB"
+position = "top"
+thickness = 180
+width_mode = "available"
+start = ["mina_workspaces"]
+center = ["q/skin-runtime:mina-music"]
+end = ["mina_network", "mina_bluetooth", "mina_clipboard", "mina_top_notifications", "mina_top_volume", "mina_top_session", "mina_top_clock"]
+
+[widget."q/skin-runtime:mina-portrait"]
+bar_x = 22
+bar_y = 98
+bar_width = 52
+bar_height = 78
+hover_panel = "tray-drawer"
+hover_context = "mina_tray"
+
+[widget.mina_network]
+type = "network"
+show_label = false
+scale = 1.0
+capsule = false
+color = "#E9DCCB"
+bar_from_right = true
+bar_x = 362
+bar_y = 14
+bar_width = 36
+bar_height = 36
+
+[widget.mina_bluetooth]
+type = "bluetooth"
+scale = 1.0
+capsule = false
+color = "#E9DCCB"
+bar_from_right = true
+bar_x = 320
+bar_y = 14
+bar_width = 36
+bar_height = 36
+
+
+[widget.mina_library]
+type = "custom_button"
+glyph = "music"
+tooltip = "Music library"
+bar_x = 26
+bar_y = 265
+bar_width = 44
+bar_height = 30
+[widget.mina_library.actions]
+left = "panel-toggle q/tmus:library"
+
+[widget."q/skin-runtime:mina-ai"]
+bar_x = 26
+bar_y = 333
+bar_width = 44
+bar_height = 30
+
+[widget."q/skin-runtime:mina-studio"]
+bar_x = 26
+bar_y = 401
+bar_width = 44
+bar_height = 30
+
+[widget."q/skin-runtime:mina-system"]
+bar_x = 26
+bar_y = 469
+bar_width = 44
+bar_height = 30
+hover_panel = "q/skin-runtime:mina-resources"
+
+[widget.mina_clipboard]
+type = "clipboard"
+bar_from_right = true
+bar_x = 278
+bar_y = 14
+bar_width = 36
+bar_height = 36
+
+
+[widget.mina_tray]
+type = "tray"
+drawer = true
+drawer_list = true
+drawer_item_size = 26
+hide_passive = false
+capsule = false
+color = "#E9DCCB"
+icon_color = "#D76C82"
+drawer_background_image = "~/.config/noctalia/plugins/skin-runtime/skin-assets/mina/signal-tray.svg"
+
+[widget.mina_workspaces]
+type = "workspaces"
+style = "regular"
+pill_scale = 1.0
+scale = 1.6
+active_pill_size = 1.5
+inactive_pill_size = 1.5
+show_labels = false
+show_icons = true
+workspace_images = [
+  "~/.config/noctalia/plugins/skin-runtime/skin-assets/mina/rake.png",
+  "~/.config/noctalia/plugins/skin-runtime/skin-assets/mina/sanguine-retreat.png",
+  "~/.config/noctalia/plugins/skin-runtime/skin-assets/mina/workspace-umbrella.svg",
+  "~/.config/noctalia/plugins/skin-runtime/skin-assets/mina/love-bites.png",
+  "~/.config/noctalia/plugins/skin-runtime/skin-assets/mina/nox-nostra.png",
+]
+show_tooltip = true
+show_all_outputs = false
+hide_when_empty = false
+capsule = false
+change_color_on_hover = true
+focused_color = "#812A43"
+occupied_color = "#35202D"
+empty_color = "#151019"
+urgent_color = "#B33F57"
+color = "#F1E2CF"
+font_family = "Maple Mono"
+font_scale = 1.0
+bar_x = 83
+bar_y = 12
+bar_width = 310
+bar_height = 40
+
+[widget.mina_top_notifications]
+type = "notifications"
+color = "#E9DCCB"
+bar_from_right = true
+bar_x = 236
+bar_y = 14
+bar_width = 36
+bar_height = 36
+
+[widget.mina_top_volume]
+type = "volume"
+show_label = false
+color = "#E9DCCB"
+bar_from_right = true
+bar_x = 194
+bar_y = 14
+bar_width = 36
+bar_height = 36
+
+[widget.mina_top_session]
+type = "session"
+color = "#E9DCCB"
+bar_from_right = true
+bar_x = 152
+bar_y = 14
+bar_width = 36
+bar_height = 36
+
+[widget.mina_top_clock]
+type = "clock"
+format = "{:%H:%M}"
+font_family = "Maple Mono"
+font_scale = 1.1
+color = "#E9DCCB"
+bar_from_right = true
+bar_x = 33
+bar_y = 14
+bar_width = 80
+bar_height = 36
+
+[widget.mina_extent_start]
+type = "spacer"
+length = 400
+
+[widget.mina_extent_end]
+type = "spacer"
+length = 271

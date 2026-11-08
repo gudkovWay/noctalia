@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="830" height="1342" viewBox="0 0 415 671">
+<defs>
+ <linearGradient id="cloth" gradientUnits="userSpaceOnUse" x1="-74" y1="0" x2="415" y2="134"><stop stop-color="#1f151e"/><stop offset=".4" stop-color="#100e15"/><stop offset="1" stop-color="#291623"/></linearGradient>
+ <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="671"><stop stop-color="#e5cba2"/><stop offset=".35" stop-color="#82503e"/><stop offset=".65" stop-color="#cfa47f"/><stop offset="1" stop-color="#6a4039"/></linearGradient>
+ <linearGradient id="red" gradientUnits="userSpaceOnUse" x1="-74" y1="0" x2="415" y2="0"><stop stop-color="#260f1c"/><stop offset=".5" stop-color="#87213c"/><stop offset="1" stop-color="#321021"/></linearGradient>
+</defs>
+<path d="M0 61Q84 115 181 100Q288 83 405 134Q371 145 376 181Q363 278 381 399Q402 496 357 542Q362 597 325 617Q237 588 161 625Q71 662 0 628Z" fill="url(#cloth)"/>
+<path d="M0 61Q84 115 181 100Q288 83 405 134Q371 145 376 181Q363 278 381 399Q402 496 357 542Q362 597 325 617Q237 588 161 625Q71 662 0 628" fill="none" stroke="#180e16" stroke-width="5"/>
+<path d="M0 61Q84 115 181 100Q288 83 405 134Q371 145 376 181Q363 278 381 399Q402 496 357 542Q362 597 325 617Q237 588 161 625Q71 662 0 628" fill="none" stroke="url(#gold)" stroke-width="1.5"/>
+<path d="M0 62Q98 131 181 105Q286 96 401 134Q370 128 349 156Q330 111 286 115Q196 134 130 130Q58 123 0 62Z M376 184Q355 248 377 390Q389 467 358 520Q385 500 378 457Q393 395 376 337Z M358 543Q338 534 324 570Q325 596 291 610Q314 603 325 617Q357 598 358 543Z" fill="url(#red)" stroke="#a16d55" stroke-width=".7"/>
+<path d="M0 628Q90 644 160 616Q242 579 324 609" fill="none" stroke="#ba8d6b" stroke-width=".7"/>
+<g fill="#12111a" stroke="#a87859" stroke-width=".65" opacity=".8">
+ <path d="M28 618V588L43 580L58 588V617 M84 628V600L98 594L111 602V624 M264 595V557H269V549H273V557H279V597 M288 601V575H298V601"/>
+ <path d="M15 608Q82 551 165 603Q207 632 264 580 M45 584V635 M96 577V631 M165 603V612 M218 611V601 M264 580V594" fill="none"/>
+</g>
+</svg>

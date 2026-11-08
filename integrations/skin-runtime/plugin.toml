@@ -165,6 +165,49 @@ audio_spectrum_bands = 24
   [widget.actions]
   middle = "none"
 
+
+[[widget]]
+id = "mina-music"
+entry = "mina-music.luau"
+bar_surface = true
+audio_spectrum = true
+audio_spectrum_bands = 24
+
+[[widget]]
+id = "mina-sidebar"
+entry = "mina-sidebar.luau"
+bar_surface = true
+
+[[widget]]
+id = "mina-dock"
+entry = "mina-dock.luau"
+bar_surface = true
+
+[[widget]]
+id = "mina-ai"
+entry = "mina-ai.luau"
+
+[[widget]]
+id = "mina-studio"
+entry = "mina-studio.luau"
+
+[[widget]]
+id = "mina-system"
+entry = "mina-system.luau"
+
+[[widget]]
+id = "mina-portrait"
+entry = "mina-portrait.luau"
+
+[[panel]]
+id = "mina-resources"
+entry = "mina-resources.luau"
+width = 415
+height = 671
+decoration = false
+placement = "attached"
+keyboard_focus = "none"
+dismiss_on_outside_click = false
 # ── Dashboard ────────────────────────────────────────────────────────────────
 # The only keyboard-taking surface of this plugin. capture_keys is the exact
 # set of chords the panel consumes; every one of them has an explicit branch
