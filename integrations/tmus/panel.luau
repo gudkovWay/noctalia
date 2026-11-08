@@ -3,12 +3,11 @@
 local KEY = "tmus"
 local SERVICE = "q/tmus:watch"
 
--- Общий скин десктопа: модуль и skin-assets кладутся рядом с плагином
--- при деплое (раскладку ведёт оркестратор). Свой модуль НЕ заводим —
--- контракт один на все панели, иначе скины разъедутся. Локальный
--- require требует plugin_api >= 22; у плагина 32 (минимум модуля —
--- 22, плюс getSetting 26 и getColor 31, см. комментарий манифеста).
+-- Shared fonts and the non-Mina desktop families remain in the desktop helper.
 local skin = require('./desktop_skin.luau')
+local Hint = require('./hint_navigation.luau')
+local hints = Hint.new()
+local volumeKeys = false
 
 -- Активна ли семья Stagecraft в текущем кадре и её рез шамфера (канон
 -- skin.tokens().chamfer). Считается ОДИН раз в начале draw(), а не в
@@ -71,6 +70,7 @@ local COLORS = {}
 -- чанка жёсткий лимит локальных имён, и каждая отдельная `local function`
 -- занимает слот до конца файла.
 local KUF = {}
+KUF.mina = require('./mina_panel.luau')
 function KUF.rolePalette()
   for k, v in pairs(COLORS_ROLE) do
     COLORS[k] = v
@@ -221,7 +221,6 @@ function KUF.npTopRow(zones)
 end
 local GRID_COLS = 4
 local NP_SPEC_BARS = 56
-local HOME_CARD_CAP = 20
 -- Бюджеты, зависящие от семьи: высоты рядов/полок и выведенные окна.
 -- Пересчитываются каждый кадр в recomputeLayout (смена семьи/рецепта
 -- подхватывается на ближайшем draw).
@@ -309,7 +308,7 @@ function KUF.recomputeLayout(ku, kuPad, kuView)
     GEO.npCenterW, GEO.npRightW, GEO.npTimeW = npCenterW, npRightW, npTimeW
     GEO.npVolW = npVolW
     GEO.npLeftW = npLeftW
-    GEO.npTextW = npLeftW - (48 + 12 + 12 + 2 * 32 + 2 * 6 + 20)
+    GEO.npTextW = npLeftW - (48 + 12 + 12 + 3 * 32 + 3 * 6 + 20)
     -- Без трека центра нет: правая зона вбирает и его ширину.
     GEO.npStateW = npRightW + npCenterW + 12
     TRACK_ROW_HEIGHT, TRACK_ROW_GAP = 44, 6
@@ -418,6 +417,13 @@ local TEXT_CHARS = {
   ["0"] = "0", ["1"] = "1", ["2"] = "2", ["3"] = "3", ["4"] = "4",
   ["5"] = "5", ["6"] = "6", ["7"] = "7", ["8"] = "8", ["9"] = "9",
   minus = "-", comma = ",", apostrophe = "'", period = ".",
+  exclam = "!", quotedbl = '"', numbersign = "#", dollar = "$",
+  percent = "%", ampersand = "&", parenleft = "(", parenright = ")",
+  asterisk = "*", plus = "+", slash = "/", colon = ":", semicolon = ";",
+  less = "<", equal = "=", greater = ">", question = "?", at = "@",
+  bracketleft = "[", backslash = "\\", bracketright = "]", asciicircum = "^",
+  underscore = "_", grave = "`", braceleft = "{", bar = "|", braceright = "}",
+  asciitilde = "~", numerosign = "№",
   Cyrillic_a = "а", Cyrillic_be = "б", Cyrillic_ve = "в", Cyrillic_ghe = "г",
   Cyrillic_de = "д", Cyrillic_ie = "е", Cyrillic_io = "ё", Cyrillic_zhe = "ж",
   Cyrillic_ze = "з", Cyrillic_i = "и", Cyrillic_shorti = "й",
@@ -438,6 +444,19 @@ local TEXT_CHARS = {
   Cyrillic_HARDSIGN = "Ъ", Cyrillic_YERU = "Ы", Cyrillic_SOFTSIGN = "Ь",
   Cyrillic_E = "Э", Cyrillic_YU = "Ю", Cyrillic_YA = "Я",
 }
+
+local function textChar(chord)
+  -- capture_keys delivers the declared chord verbatim, including Shift.
+  if string.sub(chord, 1, 6) == "Shift+" then
+    chord = string.sub(chord, 7)
+    -- Latin capture names are uppercase even without Shift; only text mode
+    -- interprets Shift as case. Cyrillic keysyms already encode their case.
+    if #chord == 1 and chord >= "A" and chord <= "Z" then
+      return chord
+    end
+  end
+  return TEXT_CHARS[chord]
+end
 -- ── Редактор поиска: код-поинтовая арифметика ────────────────────────
 -- Курсор queryCursor — ЧИСЛО КОД-ПОИНТОВ до каретки (0..len),
 -- queryLeft — левый край видимого окна, тоже в код-поинтах. Все
@@ -546,6 +565,7 @@ local selected = nil
 local playlistId = ""
 local playlistTitle = ""
 local playlistArtPath = ""
+local playlistNavigation = {}
 -- Спектр: CSV-строка значений полос, публикуемая виджетом в лёгкий
 -- ключ "tmus.spectrum" (троттлинг ≥125 мс — 8 Гц, тяжёлый snapshot
 -- KEY "tmus" не дёргается). nil — бары не рисуются.
@@ -568,7 +588,6 @@ local query = ""
 -- Курсор и левый край видимого окна поиска — в код-поинтах (0..len).
 local queryCursor = 0
 local queryLeft = 0
-local lastSearched = nil
 -- Home-лента ("tmus.home"): курсор (полка/карточка), верхнее окно
 -- полок и левые индексы горизонтальных окон по полке. homeFeed —
 -- payload лёгкого ключа; рендер-модель полок кэшируется
@@ -587,6 +606,8 @@ local homeShelfCache = {}
 -- БОЛЬШЕ НЕ является: обе «o» вставляются как текст.
 local typing = false
 local insertPending = nil
+local searchEnterDown = false
+local searchPasteDown = false
 local INSERT_ESCAPE_MS = 250
 local searchKind = "all"
 -- Фильтр выдачи по клиенту-провайдеру (§19): чипы над результатами
@@ -599,6 +620,30 @@ local rows -- defined below; used by rateSelected (cursor row lookup)
 local activate -- defined below; used by trackRow onClick (клик = Enter)
 local maybeLoadMore -- defined below; used by move/g-jumps (догрузка хвоста)
 local maybeHomeMore -- defined below; used by home move/clamp (догрузка ленты)
+local endHold -- defined below; used by hintable volume and search controls
+
+-- Display positions follow playback; commands retain canonical zero-based indices.
+local queueOrder = {}
+function queueOrder.index(s, pos)
+  return (s.queueOrder or {})[pos] or pos - 1
+end
+function queueOrder.position(s, index)
+  if index == nil then return nil end
+  local order = s.queueOrder or {}
+  if #order == 0 then return index + 1 end
+  for pos, original in ipairs(order) do
+    if original == index then return pos end
+  end
+  return nil
+end
+function queueOrder.track(s, pos)
+  return (s.queue or {})[queueOrder.index(s, pos) + 1]
+end
+
+function playlistNavigation.section()
+  local origin = playlistNavigation.origin
+  return view == "playlist" and (origin and origin.view or "library") or view
+end
 
 local function poke(event, payload)
   local argv = { "noctalia", "msg", "plugin", SERVICE, "all", event }
@@ -853,9 +898,8 @@ local function playlistAddable(p, trackProv)
 end
 
 -- Рендер-модель home-ленты: массив полок {title, subtitle, count,
--- cards} из homeFeed. count — ЧЕСТНОЕ число элементов полки до капа
--- (счётчик окна показывает его), cards капятся HOME_CARD_CAP —
--- рендерим окно, хвост не держим. Пустые полки выбрасываются.
+-- cards} из homeFeed. Держим все карточки для навигации; draw
+-- рендерит только видимое окно. Пустые полки выбрасываются.
 -- Перевычисляется только в watch-колбэке (rebuildHomeShelves) — draw
 -- до 8 Гц не должен перебирать полки.
 local function rebuildHomeShelves()
@@ -865,9 +909,6 @@ local function rebuildHomeShelves()
       local items = shelf.items or {}
       local cards = {}
       for _, it in ipairs(items) do
-        if #cards >= HOME_CARD_CAP then
-          break
-        end
         local kind = tostring(it.kind or "")
         if kind == "track" then
           table.insert(cards, {
@@ -875,6 +916,7 @@ local function rebuildHomeShelves()
             id = idOf(it),
             title = tostring(it.title or ""),
             subtitle = type(it.artists) == "table" and table.concat(it.artists, ", ") or "",
+            artists = it.artists,
             art = tostring(it.art_path or ""),
             time = durationLabel(it.duration),
             event = "radio",
@@ -897,7 +939,7 @@ local function rebuildHomeShelves()
         table.insert(out, {
           title = tostring(shelf.title or ""),
           subtitle = tostring(shelf.subtitle or ""),
-          count = #items,
+          count = #cards,
           cards = cards,
         })
       end
@@ -969,7 +1011,7 @@ end
 local function rateQueueRow(want)
   local idstr = tostring(snapshot.trackId or "")
   if idstr == "" then
-    local t = (snapshot.queue or {})[queueCursor]
+    local t = queueOrder.track(snapshot, queueCursor)
     idstr = t and idOf(t) or ""
   end
   if idstr == "" then
@@ -980,10 +1022,6 @@ local function rateQueueRow(want)
   poke("rate", send .. ":" .. idstr)
 end
 
-local function trackTitle(t)
-  local artists = type(t.artists) == "table" and table.concat(t.artists, ", ") or ""
-  return artists ~= "" and (artists .. " — " .. tostring(t.title or "")) or tostring(t.title or "")
-end
 
 local function lbl(text, props)
   local p = props or {}
@@ -1006,6 +1044,66 @@ local function lbl(text, props)
     maxLines = p.maxLines,
     opacity = p.opacity,
   })
+end
+
+-- Search consumes raw metadata; captions may contain badges or truncation.
+local function searchLabel(text, props, value, identity)
+  local queryText = noctalia.string.trim(tostring(value or ""))
+  if queryText == "" then return lbl(text, props) end
+  local label = lbl(text, props)
+  label.props.flexGrow = 1
+  label.props.maxLines = 1
+  return ui.row({
+    key = tostring(props.key) .. "-search",
+    flexGrow = props.grow,
+    width = props.width,
+    height = props.height,
+    align = "center",
+    hintIdentity = tostring(identity) .. ":" .. queryText,
+    onClick = function() submitSearch(queryText) end,
+  }, { label })
+end
+
+local function artistLabels(text, props, artists, identity)
+  local names = {}
+  for _, value in ipairs(type(artists) == "table" and artists or {}) do
+    local name = noctalia.string.trim(tostring(value or ""))
+    if name ~= "" then table.insert(names, name) end
+  end
+  if #names == 0 then return lbl(text, props) end
+  if #names == 1 then return searchLabel(text, props, names[1], identity) end
+  local children = {}
+  for i, name in ipairs(names) do
+    if i > 1 then
+      table.insert(children, lbl(", ", { key = "separator-" .. i, size = props.size, color = props.color }))
+    end
+    table.insert(children, searchLabel(name, {
+      key = "artist-" .. i, size = props.size, color = props.color, grow = 1,
+    }, name, identity .. ":" .. i))
+  end
+  return ui.row({
+    key = props.key .. "-artists", width = props.width or props.maxWidth,
+    height = props.height, flexGrow = props.grow, align = "center",
+  }, children)
+end
+
+local function hintTarget(node, identity, badge)
+  local p = node.props or {}
+  if type(p.onClick) == "function" then
+    p.hintIdentity = identity
+    p.hintAnchor = badge
+    return node
+  end
+  for _, child in ipairs(node.children or {}) do
+    if hintTarget(child, identity, badge) then return node end
+  end
+  return nil
+end
+
+local function renderPanel(tree)
+  local rendered = hints:render(tree, COLORS.accent)
+  panel.setCaptureCancel(hints:isActive() or hints:isStale())
+  panel.render(rendered)
 end
 
 local function card(children, props)
@@ -1158,11 +1256,17 @@ local function volumeNode(s)
     -- только grow-ребёнок. Вне Kumihimo строка остаётся натуральной.
     width = KU and GEO.npVolW or nil,
   }, {
-    ui.glyph({
-      key = "np-volume-glyph",
-      name = volumeGlyph(current),
-      size = 14,
-      color = COLORS.muted,
+    ui.row({
+      key = "np-volume-focus", width = 20, align = "center",
+      onClick = function()
+        volumeKeys = true
+        typing = false
+        insertPending = nil
+        endHold()
+        draw()
+      end,
+    }, {
+      ui.glyph({ key = "np-volume-glyph", name = volumeGlyph(current), size = 14, color = COLORS.muted }),
     }),
     ui.slider(sliderProps),
   })
@@ -1235,6 +1339,7 @@ local function npNode(s)
     -- «repeat», оба primary; none — тусклый ghost.
     local btnRepeat = ui.button(KUF.warmButton({
       key = "repeat",
+      hintIdentity = "repeat:" .. loopMode,
       glyph = loopMode == "track" and "repeat-once" or "repeat",
       controlSize = "sm",
       variant = loopMode ~= "none" and "primary" or "ghost",
@@ -1242,6 +1347,18 @@ local function npNode(s)
         poke("repeat", REPEAT_CYCLE[loopMode] or "none")
       end,
     }, loopMode ~= "none"))
+    local trackId = tostring(s.trackId or "")
+    local caps = capsOfProvider(s.provider)
+    local rating = ratingOf(s, trackId)
+    local btnLike = (trackId ~= "" and type(caps) == "table" and caps.rate == true)
+      and ui.button(KUF.warmButton({
+        key = "np-like", glyph = rating == "liked" and "heart-filled" or "heart",
+        controlSize = "sm", variant = rating == "liked" and "primary" or "ghost",
+        hintIdentity = trackId .. ":" .. tostring(rating),
+        onClick = function()
+          poke("rate", (rating == "liked" and "none:" or "like:") .. trackId)
+        end,
+      }, rating == "liked")) or nil
     local volume = volumeNode(s)
     -- Подпись режима повтора для Kumihimo — ОБЫЧНЫЙ lbl: ui.label берёт
     -- ОДНУ таблицу props, поэтому прежний вызов ui.label(text, props)
@@ -1262,20 +1379,20 @@ local function npNode(s)
     -- распирала бы строку транспорта. Вне KU ширина по-прежнему от
     -- раскладки, а maxLines не выставляется.
     local textColumn = ui.column({ key = "np-text", gap = 2, flexGrow = 1, width = KU and GEO.npTextW or nil }, compact(
-      lbl(providerGlyph(s.provider) .. shorten(tostring(s.title or ""), 48), {
+      searchLabel(providerGlyph(s.provider) .. shorten(tostring(s.title or ""), 48), {
         key = "np-title",
         size = 15,
         color = COLORS.text,
         maxLines = KU and 1 or nil,
         maxWidth = KU and GEO.npTextW or nil,
-      }),
-      lbl(shorten(tostring(s.artist or ""), 48), {
+      }, s.title, "playing-title:" .. tostring(s.trackId)),
+      artistLabels(shorten(tostring(s.artist or ""), 48), {
         key = "np-artist",
         size = 12,
         color = COLORS.muted,
         maxLines = KU and 1 or nil,
         maxWidth = KU and GEO.npTextW or nil,
-      }),
+      }, s.artists, "playing-artist:" .. tostring(s.trackId)),
       -- Только дефолт держит причину отдельной строкой текста: у
       -- Kumihimo она переезжает в правую колонку под время (ниже),
       -- чтобы высота арт-строки осталась 48 и бюджет транспорта — 110.
@@ -1310,7 +1427,7 @@ local function npNode(s)
         left = compact(
           artNode(s.artPath, 48),
           textColumn,
-          ui.row({ key = "np-modes", gap = 6, align = "center" }, compact(btnShuffle, btnRepeat, repeatShort))
+          ui.row({ key = "np-modes", gap = 6, align = "center" }, compact(btnLike, btnShuffle, btnRepeat, repeatShort))
         ),
         center = compact(btnPrev, btnToggle, btnNext),
         right = compact(
@@ -1333,6 +1450,7 @@ local function npNode(s)
       -- режима + громкость). Прежний вызов ui.label(text, props) для
       -- подписи режима оставлен как есть: рендер non-KU не меняем.
       local controls = { btnPrev, btnToggle, btnNext, btnShuffle, btnRepeat }
+      if btnLike then table.insert(controls, btnLike) end
       if loopMode ~= "none" then
         table.insert(controls, ui.label(REPEAT_SHORT[loopMode] or loopMode, {
           key = "np-repeat-short",
@@ -1475,11 +1593,7 @@ local function trackRow(i, t, opts)
     -- данные берём из самой строки rows() (t): в opts нет ни kind,
     -- ни id, поэтому прежняя проверка o.kind/o.id не срабатывала и
     -- клик уходил одиночным радио мимо контекста.
-    if view == "search" and t ~= nil and t.kind == "track" then
-      activate(t, i)
-    elseif o.event then
-      poke(o.event, o.payload)
-    end
+    activate(t, i)
     draw()
   end
   -- Kumihimo: компактная ОФОРМЛЕННАЯ строка выдачи (44): индекс 22, арт 28,
@@ -1495,6 +1609,7 @@ local function trackRow(i, t, opts)
     local time = o.time
     return ui.row({
       key = "track" .. i,
+      hintIdentity = view .. ":" .. playlistId .. ":" .. i .. ":" .. tostring(t.id),
       gap = 10,
       paddingH = 10,
       paddingV = 6,
@@ -1520,18 +1635,19 @@ local function trackRow(i, t, opts)
       -- Бейдж провайдера и рейтинг-маркер остаются в тексте заголовка;
       -- обрезка по реальной ширине колонки, без счётчика символов.
       ui.column({ key = "ktext" .. i, gap = 2, flexGrow = 1 }, {
-        lbl(providerGlyph(providerByTrack(t)) .. marker .. tostring(o.title or ""), {
+        searchLabel(providerGlyph(providerByTrack(t)) .. marker .. tostring(o.title or ""), {
           key = "ktitle" .. i,
           size = 13,
           color = playing and COLORS.accent or COLORS.text,
           maxLines = 1,
-        }),
-        lbl(tostring(o.subtitle or ""), {
+        }, (t.kind == "track" or t.kind == "artist") and t.rawTitle or "",
+          "row-title:" .. tostring(t.id)),
+        artistLabels(tostring(o.subtitle or ""), {
           key = "ksub" .. i,
           size = 11,
           color = COLORS.muted,
           maxLines = 1,
-        }),
+        }, t.artists, "row-artist:" .. tostring(t.id)),
       }),
       (time ~= nil and time ~= "") and ui.row({
         key = "ktime-w" .. i,
@@ -1553,16 +1669,19 @@ local function trackRow(i, t, opts)
     }),
     artNode(o.art, 32),
     -- Бейдж провайдера перед названием (и рейтинг-маркером).
-    lbl(shorten(providerGlyph(providerByTrack(t)) .. marker .. o.title, 52), {
+    searchLabel(shorten(providerGlyph(providerByTrack(t)) .. marker .. o.title, 52), {
       key = "title" .. i,
       grow = 1,
       color = current and COLORS.accent or (active and COLORS.text or COLORS.muted),
-    }),
-    lbl(shorten(o.subtitle, 32), { key = "sub" .. i, color = COLORS.muted, maxWidth = 220 }),
+    }, (t.kind == "track" or t.kind == "artist") and t.rawTitle or "",
+      "row-title:" .. tostring(t.id)),
+    artistLabels(shorten(o.subtitle, 32), { key = "sub" .. i, color = COLORS.muted, width = 220 },
+      t.artists, "row-artist:" .. tostring(t.id)),
     lbl(o.time or "", { key = "time" .. i, color = COLORS.muted, width = 56, mono = true }),
   }
   return ui.row({
     key = "track" .. i,
+    hintIdentity = view .. ":" .. playlistId .. ":" .. i .. ":" .. tostring(t.id),
     gap = 10,
     paddingH = 10,
     paddingV = 6,
@@ -1584,6 +1703,8 @@ local function resultRow(r)
     kind = kind,
     id = idOf(r),
     title = tostring(r.title or r.name or ""),
+    rawTitle = tostring(r.title or r.name or ""),
+    artists = r.artists,
     subtitle = artists ~= "" and artists or tostring(r.album or ""),
     art = tostring(r.art_path or ""),
   }
@@ -1674,8 +1795,11 @@ function rows()
             -- (pl rm-at) бьёт по позиции — дубликаты уходят по одному.
             pos = i - 1,
             rating = ratingOf(s, idstr),
-            title = trackTitle(t),
-            subtitle = tostring(t.album or ""),
+            title = tostring(t.title or ""),
+            rawTitle = tostring(t.title or ""),
+            artists = t.artists,
+            subtitle = type(t.artists) == "table" and #t.artists > 0
+              and table.concat(t.artists, ", ") or tostring(t.album or ""),
             art = tostring(t.art_path or ""),
             event = "play-playlist",
             payload = playlistId .. "|" .. idstr,
@@ -1714,6 +1838,7 @@ function rows()
     -- способ перечитать cookies браузера без терминала: залогинился в
     -- SoundCloud — жми сюда. Сокет обрывается, watch сервиса
     -- переподключается и перечитывает состояние.
+    if not KUF.mina.active then
     table.insert(out, {
       kind = "client",
       title = "Restart tmusd",
@@ -1722,6 +1847,7 @@ function rows()
       payload = "1",
       restart = true,
     })
+    end
   elseif view == "eq" then
     -- Старый демон (без equalizer в PlayerState) не даёт строк —
     -- вью покажет заглушку «eq недоступен».
@@ -1753,6 +1879,12 @@ function rows()
 end
 
 local function windowSize()
+  if KUF.mina.active then
+    if view == "library" then return CARD_WINDOW end
+    if view == "clients" then return math.max(1, math.floor(GEO.viewH / 70)) end
+    if view == "eq" then return 12 end
+    return LIST_WINDOW
+  end
   if view == "library" then
     return CARD_WINDOW
   elseif view == "search" then
@@ -1896,12 +2028,22 @@ function KUF.searchSlice(items, budget)
 end
 
 local function openPlaylist(row)
+  if view ~= "playlist" then
+    playlistNavigation.origin = {
+      view = view, cursor = cursor, windowTop = windowTop, typing = typing,
+      homeShelf = homeShelf, homeItem = homeItem, homeTop = homeTop, homeLeft = homeLeft,
+    }
+  end
   playlistTitle = row.openTitle or row.title
   playlistId = row.open
   playlistArtPath = row.openArt or ""
   view = "playlist"
   cursor = 1
   windowTop = 1
+  selected = nil
+  focusBuf = 2
+  typing = false
+  inputMode = false
   poke("tracks", row.open)
 end
 
@@ -2159,6 +2301,9 @@ local function moveY(dy)
 end
 
 local function setView(id)
+  KUF.mina.menu, KUF.mina.confirm = nil, nil
+  hints:cancel()
+  volumeKeys = false
   view = id
   cursor = 1
   windowTop = 1
@@ -2189,11 +2334,24 @@ local function setView(id)
   end
 end
 
+function playlistNavigation.back()
+  local origin = playlistNavigation.origin
+  setView(origin and origin.view or "library")
+  playlistNavigation.origin = nil
+  focusBuf = 2
+  if origin then
+    cursor, windowTop = origin.cursor, origin.windowTop
+    homeShelf, homeItem, homeTop, homeLeft = origin.homeShelf, origin.homeItem, origin.homeTop, origin.homeLeft
+    typing = origin.typing
+    inputMode = view == "search"
+  end
+end
+
 local function railNode()
   local items = {}
   local sc = SC
   for i, v in ipairs(VIEWS) do
-    local active = view == v.id or (view == "playlist" and v.id == "library")
+    local active = playlistNavigation.section() == v.id
     table.insert(items, ui.column({
       key = "rail-" .. v.id,
       width = 48,
@@ -2229,10 +2387,7 @@ local function railNode()
   }, items)
 end
 
--- Кумихимо: пять горизонтальных подвесных вкладок вместо левого рейла.
--- Источник — тот же VIEWS; активная вкладка — плюс Library для вложенного
--- playlist (как в рейле). Каждая вкладка — shared-ярлык skin.kumihimoTag:
--- подвес декоративен, цель нажатия — тело. Подпись и глиф — как в рейле.
+-- Кумихимо: те же секции, что и в рейле; вложенный плейлист сохраняет родителя.
 function KUF.tabWidth()
   return math.max(72, math.floor((GEO.bodyW - (#VIEWS - 1) * GAP) / #VIEWS))
 end
@@ -2241,7 +2396,7 @@ function KUF.tabs()
   local tabs = {}
   local w = KUF.tabWidth()
   for _, v in ipairs(VIEWS) do
-    local active = view == v.id or (view == "playlist" and v.id == "library")
+    local active = playlistNavigation.section() == v.id
     table.insert(tabs, skin.kumihimoTag({
       key = "ku-tab-" .. v.id,
       width = w,
@@ -2479,6 +2634,7 @@ local function listChildren(slice, first)
         local focused = (i == cursor) and focusBuf == 2
         table.insert(children, ui.row({
           key = "client" .. i,
+          hintIdentity = tostring(row.event) .. ":" .. tostring(row.payload),
           gap = 10,
           paddingH = 12,
           paddingV = 8,
@@ -2529,6 +2685,7 @@ local function listChildren(slice, first)
       else
         table.insert(children, ui.row({
           key = "client" .. i,
+          hintIdentity = tostring(row.event) .. ":" .. tostring(row.payload),
           gap = 10,
           padding = 12,
           height = TRACK_ROW_HEIGHT,
@@ -2608,8 +2765,10 @@ local function homeWorkspace(s)
     artNode(s.artPath, 64),
     ui.column({ key = "np-text", gap = 4, flexGrow = 1 }, {
       lbl("Now Playing", { key = "np-over", size = 11, color = COLORS.muted }),
-      lbl(providerGlyph(s.provider) .. shorten(tostring(s.title or ""), 40), { key = "np-title", size = 18, color = COLORS.text }),
-      lbl(shorten(tostring(s.artist or ""), 40), { key = "np-artist", size = 13, color = COLORS.accent }),
+      searchLabel(providerGlyph(s.provider) .. shorten(tostring(s.title or ""), 40),
+        { key = "np-title", size = 18, color = COLORS.text }, s.title, "hero-title:" .. tostring(s.trackId)),
+      artistLabels(shorten(tostring(s.artist or ""), 40),
+        { key = "np-artist", size = 13, color = COLORS.accent }, s.artists, "hero-artist:" .. tostring(s.trackId)),
       lbl(
         (tostring(s.album or "") ~= "" and shorten(s.album, 40) .. " · " or "")
           .. clock(pos) .. (dur > 0 and ("/" .. clock(dur)) or "")
@@ -2630,6 +2789,8 @@ end
 
 local function homeCardNode(shelfIndex, cardIndex, c)
   local active = shelfIndex == homeShelf and cardIndex == homeItem
+  local badge = lbl("", { key = "hf-action-hint", size = 10, mono = true })
+  local identity = "home:" .. shelfIndex .. ":" .. cardIndex .. ":" .. c.id
   -- Kumihimo: карточка подвешена на шнуре полки общим ярлыком. active в
   -- shared API — состояние навигации секции, а не тон курсора home,
   -- поэтому здесь он не передаётся: выделение курсора выражено явной
@@ -2640,7 +2801,7 @@ local function homeCardNode(shelfIndex, cardIndex, c)
   -- 152; cardArt 96): числа считаются один раз в recomputeLayout и здесь
   -- только читаются, второй копии нет.
   if KU then
-    return skin.kumihimoTag({
+    return hintTarget(skin.kumihimoTag({
       key = "hf-card-" .. shelfIndex .. "-" .. cardIndex,
       width = HOME_CARD_WIDTH,
       height = GEO.cardH,
@@ -2672,31 +2833,32 @@ local function homeCardNode(shelfIndex, cardIndex, c)
         justify = "center",
       }, {
         artNode(c.art, GEO.cardArt),
+        ui.row({ key = "hf-action-slot", width = 22 }, { badge }),
       }),
       -- Подписи живут в ФИКСИРОВАННЫХ flex-слотах 18/16 (нативный
       -- Label.height игнорируется), текст центрируется по вертикали,
       -- one-line без счётчика символов — границей служит maxWidth.
       ui.row({ key = "t-w", height = 18, align = "center" }, {
-        lbl(c.title, {
+        searchLabel(c.title, {
           key = "t",
           size = 12,
           color = COLORS.text,
           maxLines = 1,
           maxWidth = HOME_CARD_WIDTH - 14,
-        }),
+        }, c.kind == "track" and c.title or "", identity .. ":title"),
       }),
       ui.row({ key = "s-w", height = 16, align = "center" }, {
-        lbl(c.subtitle, {
+        artistLabels(c.subtitle, {
           key = "s",
           size = 11,
           color = COLORS.muted,
           maxLines = 1,
           maxWidth = HOME_CARD_WIDTH - 14,
-        }),
+        }, c.artists, identity .. ":artist"),
       }),
-    })
+    }), identity, badge)
   end
-  return ui.column({
+  return hintTarget(ui.column({
     key = "hf-card-" .. shelfIndex .. "-" .. cardIndex,
     width = HOME_CARD_WIDTH,
     height = 174,
@@ -2711,10 +2873,15 @@ local function homeCardNode(shelfIndex, cardIndex, c)
       draw()
     end,
   }, {
-    artNode(c.art, 110),
-    lbl(shorten(c.title, 18), { key = "t", height = 16, color = COLORS.text }),
-    lbl(shorten(c.subtitle, 22), { key = "s", height = 16, color = COLORS.muted }),
-  })
+    ui.row({ key = "hf-art-slot", height = 110, align = "center", justify = "center" }, {
+      artNode(c.art, 110),
+      ui.row({ key = "hf-action-slot", width = 22 }, { badge }),
+    }),
+    searchLabel(shorten(c.title, 18), { key = "t", height = 16, color = COLORS.text },
+      c.kind == "track" and c.title or "", identity .. ":title"),
+    artistLabels(shorten(c.subtitle, 22), { key = "s", height = 16, color = COLORS.muted },
+      c.artists, identity .. ":artist"),
+  }), identity, badge)
 end
 
 -- Тело home-ленты: состояние по статусу ключа, иначе видимые полки
@@ -2795,12 +2962,32 @@ local function homeFeedNode()
   })
 end
 
+local function homeSectionNode()
+  return ui.column({ key = "hf-section", gap = 8, flexGrow = 1 }, {
+    ui.row({ key = "hf-controls", height = 28, gap = 8, align = "center" }, {
+      lbl("Recommendations", { key = "hf-label", size = 12, grow = 1 }),
+      lbl("Refresh", { key = "hf-refresh-label", size = 11, color = COLORS.muted }),
+      ui.button({
+        key = "hf-refresh",
+        glyph = "refresh",
+        controlSize = "sm",
+        variant = "ghost",
+        onClick = function() poke("home-refresh") end,
+      }),
+    }),
+    homeFeedNode(),
+  })
+end
+
 local function playlistCards(slice, first)
   local cards = {}
   for k, row in ipairs(slice) do
     local i = first + k - 1
+    local title = lbl(shorten(row.title, 20), { key = "pl-title" .. i, height = 16, color = COLORS.text })
     table.insert(cards, ui.column({
       key = "pl" .. i,
+      hintIdentity = "playlist:" .. i .. ":" .. tostring(row.plid),
+      hintAnchor = title,
       width = 168,
       height = CARD_ROW_HEIGHT,
       gap = 8,
@@ -2815,7 +3002,7 @@ local function playlistCards(slice, first)
       end,
     }, {
       artNode(row.art, 120),
-      lbl(shorten(row.title, 20), { key = "pl-title" .. i, height = 16, color = COLORS.text }),
+      title,
       lbl(shorten(row.subtitle, 24), { key = "pl-sub" .. i, height = 16, color = COLORS.muted }),
     }))
   end
@@ -2836,29 +3023,27 @@ end
 -- followPlaying; Enter на строке и setView вернут его в true.
 local lastQueueIndex = nil
 local function followQueue()
-  local index = tonumber(snapshot.queueIndex)
-  if index == lastQueueIndex then
+  if hints:isActive() then return end
+  local index = queueOrder.position(snapshot, tonumber(snapshot.queueIndex))
+  if index == lastQueueIndex and queueOrder.last == snapshot.queueOrder then
     return
   end
   lastQueueIndex = index
+  queueOrder.last = snapshot.queueOrder
   if not followPlaying or index == nil then
     return
   end
-  queueCursor, queueWindowTop = clampScroll(index + 1, index + 1 - 2, #(snapshot.queue or {}), QUEUE_WINDOW)
+  queueCursor, queueWindowTop = clampScroll(index, index - 2, #(snapshot.queue or {}), QUEUE_WINDOW)
 end
 
--- Правая колонка-очередь: ЕДИНЫЙ context для всех видов. Рисуется
--- напрямую из snapshot.queue (без фильтра дизлайкнутых — зеркало
--- живой очереди) и со своим окном/курсором; счётчик берём из
--- #snapshot.queue, а не queueLen: state-событие может обгонять массив.
+-- Rows follow playback order without copying tracks; commands use canonical indices.
 local function queueContextNode(s)
   local queue = s.queue or {}
   clampQueue(queue)
   local index = tonumber(s.queueIndex)
-  local playingIdx = index ~= nil and index + 1 or nil
   local children = {
     ui.row({ key = "q-head", gap = 8, align = "center", height = KU and 20 or nil }, {
-      lbl("Queue", {
+      lbl(s.shuffle and "Queue · shuffled" or "Queue", {
         key = "q-title",
         size = 12,
         color = focusBuf == 3 and COLORS.accent or COLORS.muted,
@@ -2884,8 +3069,8 @@ local function queueContextNode(s)
     local rowsOut = {}
     local last = math.min(queueWindowTop + QUEUE_WINDOW - 1, #queue)
     for i = queueWindowTop, last do
-      local t = queue[i]
-      local isPlaying = playingIdx ~= nil and i == playingIdx
+      local t = queueOrder.track(s, i)
+      local isPlaying = index ~= nil and queueOrder.index(s, i) == index
       -- Подсветка курсора — только при фокусе буфера 3: после
       -- ctrl+h очередь остаётся зеркалом без «селекта-призрака»,
       -- играющий трек подсвечен всегда.
@@ -2906,18 +3091,15 @@ local function queueContextNode(s)
           lbl(providerGlyph(providerByTrack(t)), { key = "q-badge-t" .. i, color = COLORS.muted }),
         }),
         artNode(t.art_path, 28),
-        -- Kumihimo: заголовок растёт в реальной ширине колонки (maxLines=1),
-        -- без счётчика символов; вне KU — прежняя обрезка.
-        KU and lbl(marker .. tostring(t.title or ""), {
-          key = "q-title" .. i,
-          grow = 1,
-          size = 12,
-          color = isPlaying and COLORS.accent or (isCursor and COLORS.text or COLORS.muted),
-          maxLines = 1,
-        }) or lbl(shorten(marker .. tostring(t.title or ""), 26), {
-          key = "q-title" .. i,
-          grow = 1,
-          color = isPlaying and COLORS.accent or (isCursor and COLORS.text or COLORS.muted),
+        ui.column({ key = "q-text" .. i, gap = 1, flexGrow = 1 }, {
+          searchLabel(marker .. tostring(t.title or ""), {
+            key = "q-title" .. i, size = 12,
+            color = isPlaying and COLORS.accent or (isCursor and COLORS.text or COLORS.muted),
+            maxLines = 1,
+          }, t.title, "queue-title:" .. i .. ":" .. idOf(t)),
+          artistLabels(type(t.artists) == "table" and table.concat(t.artists, ", ") or "", {
+            key = "q-artist" .. i, size = 10, color = COLORS.muted, maxLines = 1,
+          }, t.artists, "queue-artist:" .. i .. ":" .. idOf(t)),
         }),
         -- Длительность Kumihimo — ограниченный слот 44 (label.width хост
         -- игнорирует, поэтому ширину держит flex-обёртка).
@@ -2951,7 +3133,7 @@ local function queueContextNode(s)
         -- тела) плюс заливка selected, а НЕ отогнутый угол: угол-обложка
         -- ставится только центральному буферу (focusBuf==2), очередь —
         -- отдельная компактная колонка, а не шестой таб.
-        table.insert(rowsOut, skin.kumihimoTag({
+        table.insert(rowsOut, hintTarget(skin.kumihimoTag({
           key = "q" .. i,
           height = QUEUE_ROW_HEIGHT,
           gap = 0,
@@ -2962,10 +3144,11 @@ local function queueContextNode(s)
           onClick = onClick,
         }, {
           ui.row({ key = "q-in" .. i, gap = 8, align = "center", flexGrow = 1 }, rowChildren),
-        }))
+        }), "queue:" .. i .. ":" .. idOf(t)))
       else
         table.insert(rowsOut, ui.row({
           key = "q" .. i,
+          hintIdentity = "queue:" .. i .. ":" .. idOf(t),
           gap = 8,
           paddingH = 8,
           paddingV = 4,
@@ -3005,6 +3188,13 @@ local function eqWorkspace(s)
     local active = cursor == i
     table.insert(lines, ui.row({
       key = "eq-line-" .. i,
+      hintIdentity = "eq:" .. i .. ":" .. text,
+      onClick = function()
+        cursor = i
+        focusBuf = 2
+        if row.kind ~= "eq-band" then activate(row, i) end
+        draw()
+      end,
       gap = 8,
       paddingH = 10,
       paddingV = 4,
@@ -3164,8 +3354,7 @@ local function pickerItems(s)
   for _, p in ipairs(s.playlists or {}) do
     if playlistAddable(p, trackProv) then
       local ref = plRef(p)
-      local bare = ref:match(":(.+)$") or ref
-      table.insert(out, { ref = ref, title = tostring(p.title or ""), lm = bare == "LM" })
+      table.insert(out, { ref = ref, title = tostring(p.title or ""), liked = ref == "local:liked" })
     end
   end
   return out
@@ -3189,6 +3378,7 @@ local function playlistPickerNode(s)
     local active = i == plPicker.cursor
     table.insert(out, ui.row({
       key = "plpick" .. i,
+      hintIdentity = "picker:" .. tostring(plPicker.track) .. ":" .. tostring(item.ref or "new"),
       gap = 8,
       paddingH = 10,
       paddingV = 6,
@@ -3201,9 +3391,8 @@ local function playlistPickerNode(s)
         draw()
       end,
     }, {
-      -- LM управляется лайками (edit_playlist туда не пишет) — помечаем
-      -- пункт, чтобы выбор читался как лайк, а не добавление.
-      lbl(item.lm and (shorten(item.title, 26) .. " · ♥ лайк") or shorten(item.title, 34), {
+      -- Общий Liked Music управляется оценками, а не pl add.
+      lbl(item.liked and (shorten(item.title, 26) .. " · ♥ лайк") or shorten(item.title, 34), {
         key = "plpick-t" .. i,
         grow = 1,
         color = active and COLORS.accent or COLORS.text,
@@ -3272,6 +3461,7 @@ local function helpNode()
         { "bs", "BackSpace", "стереть слева" },
         { "del", "Delete", "стереть справа" },
         { "kill", "ctrl+BackSpace", "стереть слово" },
+        { "paste", "ctrl+v", "вставить из буфера" },
         { "enter", "Return", "искать" },
         { "esc", "Esc · jj · jk", "в normal" },
         { "prov", "c", "фильтр клиента" },
@@ -3280,8 +3470,9 @@ local function helpNode()
         { "pause", "Space", "пауза" },
         { "np", "n · p", "трек ±" },
         { "rs", "r · s", "repeat · shuffle" },
+        { "hints", "F → метка", "действия / автор / название" },
         { "vol", "< · >", "громкость" },
-        { "rate", "f · d", "лайк · дизлайк" },
+        { "rate", "F → ♥ · d", "лайк · дизлайк" },
         { "pl", "a · D", "плейлист/удал." },
         { "flat", "0", "eq: Flat" },
         { "tui", "o", "терминал TUI" },
@@ -3337,7 +3528,241 @@ local function searchTextNode()
   })
 end
 
+function KUF.minaOpenMenu(title, identity, entries)
+  endHold(); hints:cancel()
+  volumeKeys, typing = false, false
+  for _,entry in ipairs(entries) do
+    local fn=entry.fn
+    entry.fn=function() KUF.mina.menu=nil; fn(); draw() end
+  end
+  KUF.mina.menu = {title=title,identity=identity,entries=entries,cursor=1}
+  KUF.mina.confirm = nil
+  draw()
+end
+
+function KUF.minaConfirm(title, fn, valid)
+  endHold(); hints:cancel()
+  KUF.mina.menu = nil
+  KUF.mina.confirm = {title=title,fn=fn,valid=valid,apply=false}
+  draw()
+end
+
+function KUF.minaDelete(row)
+  if not row then return end
+  local event,payload,title
+  if view=="playlist" and row.kind=="track" and row.pos~=nil and playlistId~="local:liked" then
+    local prov=trackProvider(playlistId)
+    if isLocalProvider(prov) then event,payload="pl","rmat:"..playlistId..":"..row.pos
+    else
+      local caps=capsOfProvider(prov)
+      if type(caps)=="table" and caps.playlist_remove==true then
+        for _,pl in ipairs(snapshot.playlists or {}) do
+          if idOf(pl)==playlistId then event,payload="pl","rm:"..plRef(pl)..":"..row.id; break end
+        end
+      end
+    end
+    title="Убрать «"..row.title.."» из плейлиста?"
+  elseif view=="library" and row.plid and row.plid~="local:liked" then
+    local caps=capsOfProvider(row.provider)
+    if isLocalProvider(row.provider) or type(caps)=="table" and caps.playlist_delete==true then
+      event,payload,title="pl","del:"..row.plid,"Удалить плейлист «"..row.title.."»?"
+    end
+  end
+  if event then
+    local sourceTracks,sourcePlaylist=snapshot.tracks,playlistId
+    KUF.minaConfirm(title,function() poke(event,payload) end,
+      function() return snapshot.tracks==sourceTracks and playlistId==sourcePlaylist end)
+  end
+end
+
+function KUF.minaRadio(row)
+  local caps=capsOfProvider(providerByTrack(row))
+  return type(caps)=="table" and caps.radio==true
+end
+
+function KUF.minaTrackAction(action,row,index)
+  if not row then return end
+  local id=tostring(row.id or "")
+  if action=="radio" then poke("radio",id)
+  elseif action=="add" then endHold(); hints:cancel(); plPicker={track=id,cursor=1}; draw()
+  elseif action=="like" then poke("rate",(row.rating=="liked" and "none:" or "like:")..id)
+  elseif action=="menu" then
+    local entries={{key="play",title=row.open and "Открыть" or "Слушать",fn=function() activate(row,index) end}}
+    if row.kind=="track" then
+      table.insert(entries,{key="radio",title="Радио",enabled=KUF.minaRadio(row),fn=function() poke("radio",id) end})
+      table.insert(entries,{key="add",title="В плейлист…",fn=function() plPicker={track=id,cursor=1} end})
+      table.insert(entries,{key="like",title=row.rating=="liked" and "Убрать лайк" or "Нравится",
+        fn=function() KUF.minaTrackAction("like",row,index) end})
+      table.insert(entries,{key="dislike",title="Не нравится",fn=function() poke("rate","dislike:"..id) end})
+      table.insert(entries,{key="artist",title="Найти исполнителя",enabled=(row.subtitle or "")~="",
+        fn=function() submitSearch(type(row.artists)=="table" and row.artists[1] or row.subtitle) end})
+    end
+    KUF.minaOpenMenu(row.title,view..":"..index..":"..id,entries)
+  end
+end
+
+function KUF.minaModalKey(chord,key)
+  local m=KUF.mina
+  if not m.active or not (m.menu or m.confirm) then return false end
+  if chord=="Escape" then m.menu,m.confirm=nil,nil
+  elseif m.confirm then
+    if chord=="Left" or key=="h" then m.confirm.apply=false
+    elseif chord=="Right" or key=="l" then m.confirm.apply=true
+    elseif chord=="Return" then local pending=m.confirm; m.confirm=nil; if pending.apply then pending.fn() end end
+  elseif key=="j" or chord=="Down" then m.menu.cursor=m.menu.cursor % #m.menu.entries+1
+  elseif key=="k" or chord=="Up" then m.menu.cursor=(m.menu.cursor-2) % #m.menu.entries+1
+  elseif chord=="Return" then
+    local entry=m.menu.entries[m.menu.cursor]
+    if entry and entry.enabled~=false then entry.fn() end
+  end
+  draw()
+  return true
+end
+
+function KUF.minaDraw()
+  local m,s=KUF.mina,snapshot
+  if m.confirm and m.confirm.valid and not m.confirm.valid() then m.confirm=nil end
+  KU,SC,KT=false,false,nil
+  COLORS.bg,COLORS.surface="#00000000","#00000000"
+  COLORS.text,COLORS.muted,COLORS.accent="#DDD4D3","#B4AAAD","#CCA99B"
+  COLORS.selected,COLORS.border="#30232B88","#54464A"
+  local layout=m.layout(view)
+  GEO.viewH,GEO.bodyH,GEO.workspaceW=layout.height,layout.height,layout.main
+  LIST_WINDOW,QUEUE_WINDOW=layout.tracks,layout.queueRows
+  GRID_COLS=layout.narrow and 3 or 4
+  CARD_WINDOW=GRID_COLS*math.max(1,math.floor((layout.height-50)/167))
+  SHELF_WINDOW,HOME_CARD_WINDOW=layout.homeRows,3
+  clampQueue(s.queue or {})
+  local all=rows()
+  clampCursor(all)
+  local slice,first=visibleWindow(all)
+  local model={
+    view=view,sectionId=playlistNavigation.section(),focus=focusBuf,cursor=cursor,
+    snapshot=s,layout=layout,items=slice,first=first,total=#all,columns=GRID_COLS,
+    playlist={title=playlistTitle,id=playlistId,art=playlistArtPath},
+    naming=plNaming,name=plName,volume=volDraft or math.clamp(math.floor(tonumber(s.volume) or 0),0,100),
+    volumeKeys=volumeKeys,typing=typing,time=clock(seconds(s.position)).." / "..clock(seconds(s.duration)),
+    help=helpShown and helpNode() or nil,picker=plPicker and playlistPickerNode(s) or nil,
+    queue={},home={},kinds={},providers={},frequencies=EQ_FREQ_LABELS,message="",error=tostring(s.error or ""),
+    command=poke,radio=KUF.minaRadio,auth=function(id) return providerMeta[id] end,
+    section=function(id) setView(id); focusBuf=2; draw() end,close=function() panel.close() end,
+    back=function() playlistNavigation.back(); draw() end,
+    select=function(i) cursor=i; focusBuf=2; typing=false; endHold(); draw() end,
+    activate=function(row,i) cursor=i; focusBuf=2; activate(row,i); draw() end,
+    trackAction=KUF.minaTrackAction,
+    redraw=draw,
+    toggleBuffer=function() typing=false; focusBuf=focusBuf==3 and 2 or 3; endHold(); draw() end,
+    cancel=function() m.confirm=nil; draw() end,
+    confirm=function() local pending=m.confirm; m.confirm=nil; if pending then pending.fn() end; draw() end,
+    volumeFocus=function() hints:cancel(); typing=false; volumeKeys=true; endHold(); draw() end,
+    volumeDraft=function(v) volDraft=math.clamp(math.floor(tonumber(v) or 0),0,100); draw() end,
+    volumeCommit=function(v)
+      local value=volDraft or math.clamp(math.floor(tonumber(v) or tonumber(s.volume) or 0),0,100)
+      volDraft=nil; poke("vol-set",tostring(value)); draw()
+    end,
+    searchText=(query~="" or typing) and searchTextNode() or lbl("Поиск музыки",{key="mina-search-placeholder",grow=1}),
+    searchFocus=function() focusBuf=2; typing=true; volumeKeys=false; endHold(); draw() end,
+    searchSubmit=function() if noctalia.string.trim(query)~="" then doSearch(); typing=false; draw() end end,
+    playPlaylist=function() if playlistId~="" then poke("play-playlist",playlistId) end end,
+    presets=function()
+      local entries={}
+      for _,name in ipairs(EQ_PRESET_NAMES) do
+        table.insert(entries,{key="preset-"..tostring(#entries+1),title=name,fn=function() poke("eq","preset-on:"..name) end})
+      end
+      KUF.minaOpenMenu("Пресеты","eq-presets",entries)
+    end,
+    modes=function()
+      KUF.minaOpenMenu("Режимы очереди","queue-modes",{
+        {key="shuffle",title=s.shuffle and "Перемешивание ✓" or "Перемешивание",fn=function() poke("shuffle","toggle") end},
+        {key="repeat",title="Повтор · "..tostring(s.loop or "none"),fn=function() poke("repeat",REPEAT_CYCLE[tostring(s.loop or "none")] or "none") end},
+      })
+    end,
+    nowActions=function()
+      KUF.minaTrackAction("menu",{id=tostring(s.trackId or ""),kind="track",title=s.title,subtitle=s.artist,artists=s.artists,
+        event="play",payload=tostring(s.trackId or ""),rating=ratingOf(s,s.trackId)},0)
+    end,
+  }
+  for _,entry in ipairs(SEARCH_KINDS) do
+    table.insert(model.kinds,{id=entry.id,title=entry.title,active=searchKind==entry.id,fn=function()
+      searchKind=entry.id; rowsCache=nil; cursor=1; windowTop=1; draw()
+    end})
+  end
+  table.insert(model.providers,{id="all",title="Все",active=searchProvider=="all",fn=function() searchProvider="all"; rowsCache=nil; cursor=1; windowTop=1; draw() end})
+  for _,p in ipairs(s.providers or {}) do
+    table.insert(model.providers,{id=p.id,title=p.name,active=searchProvider==p.id,fn=function() searchProvider=p.id; rowsCache=nil; cursor=1; windowTop=1; draw() end})
+  end
+  model.provider=function(row)
+    for _,p in ipairs(s.providers or {}) do if p.id==providerByTrack(row) then return p.name end end
+    return providerByTrack(row)
+  end
+  model.viewActionTitle,model.viewAction="Обновить",function() poke("home-refresh") end
+  if view=="library" then model.viewActionTitle,model.viewAction="Новый плейлист",function() startPlNaming(nil); draw() end
+  elseif view=="playlist" then model.viewActionTitle,model.viewAction="Плейлист…",function()
+    local target=all[cursor]
+    local caps=capsOfProvider(trackProvider(playlistId))
+    KUF.minaOpenMenu(playlistTitle,"playlist:"..playlistId,{
+      {key="refresh",title="Обновить треки",enabled=not s.tracksLoading,fn=function() poke("tracks-refresh",playlistId) end},
+      {key="remove",title="Убрать выбранный трек…",
+        enabled=target~=nil and target.kind=="track" and playlistId~="local:liked"
+          and (isLocalProvider(trackProvider(playlistId)) or type(caps)=="table" and caps.playlist_remove==true),
+        fn=function() if snapshot.tracks==s.tracks then KUF.minaDelete(target) end end},
+    })
+  end
+  elseif view=="clients" then model.viewActionTitle,model.viewAction="Сервис…",function()
+    KUF.minaOpenMenu("Сервис tmusd","service",{
+      {key="refresh",title="Обновить состояние",fn=function() poke("refresh") end},
+      {key="reconnect",title="Переподключить панель",fn=function() poke("reconnect") end},
+      {key="tui",title="Открыть TUI",fn=function() poke("tui"); panel.close() end},
+      {key="restart",title="Перезапустить tmusd…",fn=function()
+        KUF.minaConfirm("Перезапустить tmusd? Воспроизведение прервётся.",function() poke("restart-daemon") end)
+      end},
+    })
+  end
+  elseif view=="eq" then model.viewActionTitle,model.viewAction="Пресеты…",model.presets end
+  if not s.linked then model.message="tmusd не отвечает. Откройте «Источники → Сервис…»."
+  elseif view=="playlist" then
+    model.error=tostring(s.tracksError or "")
+    if tostring(s.tracksId or "")~=playlistId then model.message="Загрузка плейлиста…"
+    elseif #all==0 then model.message="В плейлисте пока нет треков" end
+  elseif view=="search" and #all==0 then model.message=searching and "Ищем…" or query=="" and "Введите запрос и нажмите Enter" or "Ничего не найдено"
+  elseif view=="library" and #all==0 then model.message="Плейлистов пока нет" end
+  clampHomeCursor()
+  for i=homeTop,math.min(#homeShelves(),homeTop+SHELF_WINDOW-1) do
+    local shelf=homeShelves()[i]
+    local entry={index=i,title=shelf.title,cards={}}
+    local left=homeLeft[i] or 1
+    for j=left,math.min(#shelf.cards,left+HOME_CARD_WINDOW-1) do
+      local row=shelf.cards[j]
+      table.insert(entry.cards,{index=j,row=row,chosen=i==homeShelf and j==homeItem,
+        select=function() homeShelf=i; homeItem=j; focusBuf=2; draw() end,
+        activate=function() homeShelf=i; homeItem=j; focusBuf=2; homeActivate(); draw() end})
+    end
+    table.insert(model.home,entry)
+  end
+  model.homeMessage=(homeFeed==nil or homeFeed.status=="loading") and "Загрузка рекомендаций…"
+    or homeFeed.status=="error" and tostring(homeFeed.error or "Рекомендации недоступны") or "Рекомендаций пока нет"
+  for i=queueWindowTop,math.min(#(s.queue or {}),queueWindowTop+QUEUE_WINDOW-1) do
+    local track=queueOrder.track(s,i)
+    if track then
+      local canonical=queueOrder.index(s,i)
+      table.insert(model.queue,{index=i,id=idOf(track),row=track,artist=type(track.artists)=="table" and table.concat(track.artists,", ") or "",
+        playing=canonical==tonumber(s.queueIndex),chosen=i==queueCursor,
+        select=function() queueCursor=i; followPlaying=false; focusBuf=3; typing=false; draw() end,
+        play=function() poke("queue-goto",tostring(canonical)); followPlaying=true end})
+    end
+  end
+  renderPanel(m.render(model))
+  panel.setCaptureCancel(hints:isActive() or hints:isStale() or m.menu~=nil or m.confirm~=nil or plNaming or plPicker~=nil or helpShown or typing or volumeKeys)
+end
+
+function onPanelGeometry(width,height)
+  KUF.mina.width,KUF.mina.height=math.max(1,width),math.max(1,height)
+  draw()
+end
+
 function draw()
+  KUF.mina.active=KUF.mina.enabled()
+  if KUF.mina.active then KUF.minaDraw(); return end
   -- Одно чтение рецепта на кадр. Семьи взаимоисключающи: Kumihimo
   -- проверяем первым, иначе stagecraft(). Токены — тоже на кадр, чтобы
   -- смена рецепта подхватывалась на ближайшем рендере. Бюджеты окон
@@ -3401,7 +3826,7 @@ function draw()
       end
     end
     -- Лента рекомендаций: состояния/полки, прокручиваемый скролл.
-    table.insert(wsChildren, homeFeedNode())
+    table.insert(wsChildren, homeSectionNode())
   elseif view == "search" then
     workspaceGrow = 63
     contextGrow = 37
@@ -3449,7 +3874,12 @@ function draw()
         borderWidth = KU and 1 or nil,
         fill = COLORS.surface,
         onClick = function()
-          cursor = 1
+          focusBuf = 2
+          typing = true
+          insertPending = nil
+          volumeKeys = false
+          endHold()
+          draw()
         end,
       }, {
         ui.glyph({
@@ -3507,6 +3937,13 @@ function draw()
     }
   elseif view == "playlist" then
     local body = {}
+    local refreshError = tostring(s.tracksError or "")
+    if refreshError ~= "" then
+      table.insert(body, lbl(refreshError, {
+        key = "playlist-refresh-error", size = 11, color = COLORS.error,
+        maxLines = KU and 2 or nil,
+      }))
+    end
     if state then
       table.insert(body, state)
     else
@@ -3515,7 +3952,26 @@ function draw()
       }))
     end
     wsChildren = {
-      lbl(shorten(playlistTitle, 40), { key = "ws-title", size = 18, color = COLORS.text }),
+      ui.row({ key = "playlist-controls", height = 28, gap = 8, align = "center" }, compact(
+        lbl(shorten(playlistTitle, 40), { key = "ws-title", size = 18, color = COLORS.text, grow = 1 }),
+        (playlistId == "local:liked" or playlistId == "ytmusic:LM") and
+          lbl(s.tracksLoading and "Refreshing…" or "Refresh", {
+            key = "playlist-refresh-label", size = 11, color = COLORS.muted,
+          }) or nil,
+        (playlistId == "local:liked" or playlistId == "ytmusic:LM") and ui.button({
+          key = "playlist-refresh",
+          hintIdentity = playlistId .. ":refresh",
+          enabled = not s.tracksLoading,
+          glyph = s.tracksLoading and "loader" or "refresh",
+          controlSize = "sm",
+          variant = "ghost",
+          onClick = function()
+            if not snapshot.tracksLoading then
+              poke("tracks-refresh", playlistId)
+            end
+          end,
+        }) or nil
+      )),
       ui.column({ key = "ws-body", gap = GAP, flexGrow = 1 }, body),
     }
   elseif view == "eq" then
@@ -3601,14 +4057,14 @@ function draw()
     align = "center",
     height = KU and GEO.footer or nil,
   }, {
-    lbl("? — подсказки · Tab · ctrl+h/l — буферы", {
+    lbl(volumeKeys and "h/l · ←/→ — громкость · Esc — выход" or "F — действия · ? — карта · Tab — буферы", {
       key = "footer",
       size = 11,
       color = COLORS.muted,
       maxLines = KU and 1 or nil,
     }),
     lbl("", { key = "footer-spacer", grow = 1 }),
-    lbl(typing and "INSERT" or "NORMAL", {
+    lbl(volumeKeys and "VOLUME" or (typing and "INSERT" or "NORMAL"), {
       key = "footer-mode",
       size = 10,
       color = typing and COLORS.accent or COLORS.muted,
@@ -3630,7 +4086,7 @@ function draw()
       skin.kumihimoCord({ key = "np-cord" }),
       npNode(s),
     })
-    panel.render(skin.frame(ui.column({
+    renderPanel(skin.frame(ui.column({
       key = "root",
       gap = GAP,
       -- Корень Kumihimo паддится неодинаково: 16 по горизонтали, 8 по
@@ -3647,7 +4103,7 @@ function draw()
     }), "tmus-root"))
     return
   end
-  panel.render(skin.frame(ui.column({
+  renderPanel(skin.frame(ui.column({
     key = "root",
     gap = GAP,
     padding = PAD,
@@ -3711,7 +4167,7 @@ local function startHold(chord, action)
   panel.setNeedsFrameTick(true)
 end
 
-local function endHold()
+function endHold()
   held = nil
   panel.setNeedsFrameTick(false)
 end
@@ -3826,22 +4282,79 @@ function onFrameTick(deltaMs)
 end
 
 function onKey(chord, pressed)
+  local pasteChord = string.lower(chord) == "ctrl+v" or string.lower(chord) == "ctrl+cyrillic_em"
   if not pressed then
+    if chord == "Return" then searchEnterDown = false end
+    if pasteChord then searchPasteDown = false end
+    hints:release(chord)
     if held and held.chord == chord then
       endHold()
     end
     return
   end
+  -- A submit changes insert to normal; its held press must not activate a row.
+  if chord == "Return" and searchEnterDown then return end
+  if pasteChord and searchPasteDown then return end
+  if hints:isDown(chord) then return end
+
 
   if held and held.chord == chord then
     return
   end
 
   local key = LAYOUT[chord] or chord
+  local lcHint = string.lower(tostring(chord))
+  local through = lcHint == "tab" or lcHint == "ctrl+j" or lcHint == "ctrl+k"
+    or lcHint == "ctrl+h" or lcHint == "ctrl+l"
+    or lcHint == "ctrl+cyrillic_o" or lcHint == "ctrl+cyrillic_el"
+    or lcHint == "ctrl+cyrillic_er" or lcHint == "ctrl+cyrillic_de"
+    or chord == "XF86AudioNext" or chord == "XF86AudioPrev"
+  if hints:isStale() then
+    if through then
+      hints:cancel()
+    elseif lcHint == "escape" then
+      hints:cancel()
+      draw()
+      return
+    elseif Hint.letter(chord) ~= "f" then
+      return
+    end
+  end
+  if hints:isActive() then
+    if through then
+      hints:cancel()
+    else
+      hints:press(chord)
+      draw()
+      return
+    end
+  end
+  if not plNaming and not (typing and focusBuf == 2) and Hint.letter(chord) == "f" then
+    endHold()
+    volumeKeys = false
+    hints:start(chord)
+    draw()
+    return
+  end
+  if KUF.minaModalKey(chord,key) then return end
+  if volumeKeys then
+    if through then
+      volumeKeys = false
+    elseif lcHint == "escape" then
+      volumeKeys = false
+      draw()
+      return
+    elseif key == "h" or key == "l" or chord == "Left" or chord == "Right" then
+      poke((key == "h" or chord == "Left") and "vol-down" or "vol-up")
+      return
+    else
+      volumeKeys = false
+    end
+  end
 
   if chord == "ctrl+j" or chord == "ctrl+Cyrillic_o" or chord == "ctrl+k" or chord == "ctrl+Cyrillic_el" then
     local forward = chord == "ctrl+j" or chord == "ctrl+Cyrillic_o"
-    local section = view == "playlist" and "library" or view
+    local section = playlistNavigation.section()
     local i = VIEW_IDS[section] or 1
     i = i + (forward and 1 or -1)
     if i < 1 then
@@ -3876,7 +4389,7 @@ function onKey(chord, pressed)
         plName = plName .. " "
       end
     else
-      local ch = TEXT_CHARS[chord]
+      local ch = textChar(chord)
       if ch and #plName < 64 then
         plName = plName .. ch
       end
@@ -3904,10 +4417,8 @@ function onKey(chord, pressed)
       else
         local item = items[plPicker.cursor]
         if item and item.ref then
-          if item.lm then
-            -- Liked Music нельзя править через edit_playlist — он
-            -- целиком выводится из лайков; подтверждение на LM = лайк
-            -- трека, ради которого и открыт пикер.
+          if item.ref == "local:liked" then
+            -- Виртуальный плейлист меняется через оценку трека.
             poke("rate", "like:" .. plPicker.track)
           else
             poke("pl", "add:" .. item.ref .. ":" .. plPicker.track)
@@ -3993,14 +4504,10 @@ function onKey(chord, pressed)
       end
       insertPending = nil
       if chord == "Return" then
-        -- Enter двоякий, как в каждом лаунчере: изменившийся запрос
-        -- уходит в поиск, неизменный (выдача уже на экране) —
-        -- активирует выбранную строку. Обе ветки выводят в normal:
-        -- витрина INSERT/NORMAL не должна рассинхронизироваться.
-        if query ~= "" and query ~= lastSearched then
+        -- Insert Enter only submits. Playback requires a new press in normal.
+        searchEnterDown = true
+        if noctalia.string.trim(query) ~= "" then
           doSearch()
-        else
-          activate(rows()[cursor], cursor)
         end
         typing = false
         queryCursor = charCount(query)
@@ -4009,6 +4516,22 @@ function onKey(chord, pressed)
         typing = false
         queryCursor = charCount(query)
         insertPending = nil
+      elseif pasteChord then
+        -- One insertion per physical press, using the host's current text
+        -- selection (nil for an empty/non-text clipboard). Never submit here.
+        searchPasteDown = true
+        local text = noctalia.clipboardText()
+        local room = QUERY_MAX_CHARS - charCount(query)
+        if type(text) == "string" and room > 0 then
+          text = string.gsub(text, "%c+", " ")
+          local count = utf8.len(text)
+          if count and count >= 0 then
+            if count > room then
+              text = string.sub(text, 1, byteOffset(text, room) - 1)
+            end
+            query, queryCursor = insertAt(query, queryCursor, text)
+          end
+        end
       elseif chord == "Left" then
         -- Курсор ходит по код-поинтам; удержание — темп текста.
         queryCursor = math.max(0, queryCursor - 1)
@@ -4039,7 +4562,7 @@ function onKey(chord, pressed)
       else
         -- Вставка В ПОЗИЦИЮ КУРСОРА (Space — тот же текстовый символ).
         -- Лимит буфера — по код-поинтам, не по байтам.
-        local ch = chord == "Space" and " " or TEXT_CHARS[chord]
+        local ch = chord == "Space" and " " or textChar(chord)
         if ch and charCount(query) < QUERY_MAX_CHARS then
           query, queryCursor = insertAt(query, queryCursor, ch)
           if isJ then
@@ -4111,15 +4634,13 @@ function onKey(chord, pressed)
       -- Активация строки очереди: 0-базный индекс, сервис уже мапит
       -- на CLI queue-goto. Жест пользователя — автоскролл за играющим
       -- снова включён.
-      poke("queue-goto", tostring(queueCursor - 1))
+      poke("queue-goto", tostring(queueOrder.index(snapshot, queueCursor)))
       followPlaying = true
     elseif chord == "Space" then
       poke("toggle")
     elseif chord == "BackSpace" or chord == "Backspace" then
       -- Назад в центральный буфер — зеркало фокус-тумглера выше.
       focusBuf = 2
-    elseif key == "f" then
-      rateQueueRow("liked")
     elseif key == "d" then
       rateQueueRow("disliked")
     elseif chord == "A" or chord == "Cyrillic_f" then
@@ -4127,7 +4648,7 @@ function onKey(chord, pressed)
       -- курсора очереди (решение хозяина: цель f/d/a — играющий).
       local track = tostring(snapshot.trackId or "")
       if track == "" then
-        track = idOf((snapshot.queue or {})[queueCursor])
+        track = idOf(queueOrder.track(snapshot, queueCursor))
       end
       if track ~= "" then
         plPicker = { track = track, cursor = 1 }
@@ -4247,10 +4768,6 @@ function onKey(chord, pressed)
     poke("repeat", REPEAT_CYCLE[tostring(snapshot.loop or "none")] or "none")
   elseif key == "s" then
     poke("shuffle", "toggle")
-  elseif key == "f" then
-    -- Оценка строки курсора (или текущего трека на home); повторное
-    -- нажатие снимает оценку — см. rateSelected.
-    rateSelected("liked")
   elseif key == "d" then
     rateSelected("disliked")
   elseif chord == "A" or chord == "Cyrillic_f" then
@@ -4279,7 +4796,8 @@ function onKey(chord, pressed)
       -- позиции (pl rm-at): дубликаты уходят строго по одному, идентичность
       -- не размывается. Нативный — только при caps.playlist_remove,
       -- иначе по id трека (pl rm).
-      if row and row.kind == "track" and row.id and row.pos ~= nil then
+      if row and row.kind == "track" and row.id and row.pos ~= nil
+        and playlistId ~= "local:liked" then
         local prov = trackProvider(playlistId)
         if isLocalProvider(prov) then
           poke("pl", "rmat:" .. playlistId .. ":" .. tostring(row.pos))
@@ -4301,9 +4819,9 @@ function onKey(chord, pressed)
       end
     elseif view == "library" then
       local row = rows()[cursor]
-      if row and row.kind == "playlist" and (row.plid or "") ~= "" then
-        -- Удаление самого плейлиста: локальный — всегда; нативный —
-        -- только при caps.playlist_delete.
+      if row and row.kind == "playlist" and (row.plid or "") ~= ""
+        and row.plid ~= "local:liked" then
+        -- Обычные локальные плейлисты редактируемы; виртуальный — нет.
         local caps = capsOfProvider(row.provider)
         if isLocalProvider(row.provider)
           or (type(caps) == "table" and caps.playlist_delete == true) then
@@ -4323,20 +4841,24 @@ function onKey(chord, pressed)
     -- `period` — та же физическая клавиша на ЙЦУКЕН: точка входит в
     -- поиск и без переключения раскладки.
     setView("search")
-  elseif chord == "BackSpace" then
-    -- Назад по иерархии видов: из плейлиста — в Library (бывший h),
-    -- из search-normal — на home (бывший no-op, зеркало Esc; в
-    -- search-insert BackSpace обслуживает поле в inputMode-блоке
-    -- выше, сюда попадает только не-input случай — ветка оставлена
-    -- как защита). Прочее — глотаем, чтобы не утекала в приложения
-    -- под панелью.
+  elseif lc == "backspace" then
     if view == "playlist" then
-      setView("library")
+      playlistNavigation.back()
     elseif view == "search" and not inputMode then
       setView("home")
     end
   end
 
+  draw()
+end
+
+local function refreshHome(state)
+  homeFeed = type(state) == "table" and state or nil
+  rebuildHomeShelves()
+  if view == "home" then
+    clampHomeCursor()
+    maybeHomeMore()
+  end
   draw()
 end
 
@@ -4359,12 +4881,18 @@ end
 -- `A` → Esc → переоткрытие показывало поповер заново («Esc не отменяет
 -- действие»).
 local function clearTransient()
+  hints:reset()
+  KUF.mina.menu, KUF.mina.confirm, KUF.mina.eqDraft = nil, nil, {}
+  panel.setCaptureCancel(false)
+  volumeKeys = false
   plPicker = nil
   plNaming = false
   plName = ""
   plAddAfterCreate = nil
   helpShown = false
   insertPending = nil
+  searchEnterDown = false
+  searchPasteDown = false
 end
 
 function onOpen()
@@ -4376,6 +4904,7 @@ function onOpen()
   queueWindowTop = 1
   followPlaying = true
   poke("refresh")
+  refreshHome(noctalia.state.get("tmus.home"))
   refresh(noctalia.state.get(KEY))
 end
 
@@ -4392,20 +4921,23 @@ end
 
 function doSearch()
   lastSearchSerial = snapshot.searchSerial
-  lastSearched = query
   searching = true
   poke("search", (SEARCH_KIND_TOKENS[searchKind] or "all") .. "|" .. noctalia.string.urlEncode(query))
   draw()
 end
 
 function submitSearch(text)
-  query = noctalia.string.trim(text or "")
+  local textQuery = noctalia.string.trim(text or "")
+  if textQuery == "" then return end
+  endHold()
+  setView("search")
+  query = textQuery
   queryCursor = charCount(query)
   queryLeft = 0
-  if query == "" then
-    return
-  end
-  setView("search")
+  searchKind, searchProvider = "all", "all"
+  focusBuf = 2
+  typing = false
+  insertPending = nil
   doSearch()
 end
 
@@ -4432,19 +4964,6 @@ noctalia.state.watch("tmus.spectrum", function(v)
   spectrum = (type(v) == "string" and v ~= "") and v or nil
   draw()
 end)
--- Home-лента рекомендаций: лёгкий ключ "tmus.home" (сервис публикует
--- status + полки; art_path декорирован у первых 14 карточек полки).
--- Рендер-модель полок перевычисляется ТОЛЬКО здесь — draw до 8 Гц
--- перебирать полки не должен. Сервис обязан быть обработчиком
--- onUpdateState: обновляем кэш и перерисовываем.
-noctalia.state.watch("tmus.home", function(v)
-  homeFeed = type(v) == "table" and v or nil
-  rebuildHomeShelves()
-  if view == "home" then
-    clampHomeCursor()
-    -- Лента догрузилась до конца окна при открытом home: если хвост
-    -- уже на экране — запросить продолжение сразу, не дожидаясь хода.
-    maybeHomeMore()
-  end
-  draw()
-end)
+-- Watches report changes only; also consume the feed published before this panel existed.
+noctalia.state.watch("tmus.home", refreshHome)
+refreshHome(noctalia.state.get("tmus.home"))
