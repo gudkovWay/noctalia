@@ -110,11 +110,17 @@ end
 local function refresh(s)
   s = s or {}
   local decide = (tonumber(s.unsure) or 0) + (tonumber(s.warn) or 0)
-  local memoryDisputed = tonumber(s.memory_disputed) or 0
+  local memory = s.memory or {}
+  local counts = memory.counts or {}
+  local worker = (memory.worker or {}).status or "unknown"
+  local memoryAttention = (counts.needs_owner or 0)+(counts.failed or 0)+(counts.blocked or 0)+(counts.policy_blocked or 0)>0
+    or memory.provider_failure or (memory.error or "")~="" or worker=="failed" or worker=="disabled"
   local live = alive(s)
 
   if s.running or (s.acting or "") ~= "" or (s.actingModel or "") ~= "" then
     paint("loader", "primary")
+  elseif memoryAttention then
+    paint("robot", "error")
   elseif live then
     local word = modelWord(s)
     if word == "на связи" then
@@ -126,7 +132,7 @@ local function refresh(s)
     else
       paint("loader", "secondary")      -- поднимается или гаснет
     end
-  elseif decide > 0 or memoryDisputed > 0 then
+  elseif decide > 0 then
     paint("robot", "error")
   else
     paint("robot", "on_surface_variant")
@@ -167,16 +173,20 @@ local function refresh(s)
   if s.running then
     table.insert(rows, { key = "идёт разбор", value = s.tail or "" })
   end
-  table.insert(rows, { key = "не разобрано", value = tostring(tonumber(s.new) or 0) })
+  table.insert(rows, { key = "архив: изменились карточки", value = tostring(tonumber(s.new) or 0) })
   if (tonumber(s.unsure) or 0) > 0 then
-    table.insert(rows, { key = "спорных (разбор)", value = tostring(s.unsure) })
+    table.insert(rows, { key = "архив: допуск не решён", value = tostring(s.unsure) })
   end
-  if (tonumber(s.memory_disputed) or 0) > 0 then
-    table.insert(rows, { key = "память: спорных", value = tostring(s.memory_disputed) })
+  local workerNames = {running="worker работает",waiting="таймер ожидает",disabled="таймер выключен",failed="сбой worker",unknown="состояние неизвестно"}
+  table.insert(rows, {key="память v2",value=(memory.error or "")~="" and memory.error or workerNames[worker] or worker})
+  if memory.counts then
+    table.insert(rows, {key="память: очередь",value=tostring(counts.pending+counts.running+counts.applied).." фрагм. / "..tostring(memory.queue_sources or 0).." сессий"})
+    table.insert(rows, {key="память: доставлено",value=tostring(counts.indexed).." пакетов"})
+    table.insert(rows, {key="память: вопросы / без доказательств",value=tostring(counts.needs_owner).." / "..tostring(counts.needs_evidence)})
+    table.insert(rows, {key="память: блокировки",value=tostring(counts.failed+counts.blocked+counts.policy_blocked)})
+    table.insert(rows, {key="память: снимок",value=tostring(math.max(0,math.floor((os.time()-(memory.at or 0))/60))).." мин назад"})
   end
-  if (tonumber(s.memory_pending) or 0) > 0 then
-    table.insert(rows, { key = "память: ждут Luna", value = tostring(s.memory_pending) })
-  end
+  if memory.provider_failure then table.insert(rows,{key="reviewer",value="остановлен после ошибки, без автоповтора"}) end
   if (tonumber(s.warn) or 0) > 0 then
     table.insert(rows, { key = "небезопасных", value = tostring(s.warn) })
   end
@@ -191,10 +201,6 @@ end
 
 function onClick()
   noctalia.togglePanel(PANEL)
-end
-
-function onMiddleClick()
-  poke("run")
 end
 
 function onRightClick()
